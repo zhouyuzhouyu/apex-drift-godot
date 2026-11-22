@@ -6,11 +6,17 @@ A complete 3D arcade-simcade racing game built with **Godot 4.4+** (GL Compatibi
 
 ---
 
-## Gameplay Showcase Video / 实机演示视频
+## Gameplay Showcase Videos / 实机演示视频
 
-> 🎬 **[Watch Gameplay Showcase Video (`docs/videos/apex_drift_showcase.mp4`)](docs/videos/apex_drift_showcase.mp4)** — 11s 24fps H.264 capture showcasing the 3D Showroom, F1 Perfect Launch on Coastal Sunway, Drift & Hood Cam on Sakura Mountain Pass, Neon Midnight Circuit, and Grand Prix Championship Podium.
+> 🎬 **[Watch Arcade Rail-Drift Demo (`docs/videos/apex_drift_rail_demo.mp4`)](docs/videos/apex_drift_rail_demo.mp4)** — 8s real-time 24fps H.264 capture showcasing the Ridge Racer / Asphalt 3-Stage Arcade Rail-Drift System (`Space` & Brake-to-Drift, LV.1 Cyan → LV.2 Gold → LV.3 Violet Charge & Ultra Exit Boost!).
+>
+> 🎬 **[Watch Full Game Showcase (`docs/videos/apex_drift_showcase.mp4`)](docs/videos/apex_drift_showcase.mp4)** — 11s 24fps H.264 capture showcasing the 3D Showroom, F1 Perfect Launch on Coastal Sunway, Sakura Mountain Pass, Neon Midnight Circuit, and Grand Prix Championship Podium.
 
 ## Screenshots / 游戏截图
+
+| 轨道漂移 LV.3 紫焰蓄力 · Arcade Rail-Drift LV.3 | 出弯终极小喷爆发 · LV.3 Ultra Drift Boost |
+|---|---|
+| ![Arcade Rail-Drift LV.3](docs/screenshots/rail_drift_lv3.png) | ![LV.3 Ultra Drift Boost](docs/screenshots/rail_drift_boost.png) |
 
 | 主菜单 3D 旋转车库 · Main Menu Showroom | 滨海日光赛道 · Coastal Sunway |
 |---|---|
@@ -45,12 +51,12 @@ A complete 3D arcade-simcade racing game built with **Godot 4.4+** (GL Compatibi
 - **涡流 F-ZERO (VORTEX F-ZERO)** — 轻量化高下压力方程式原型车，极速与高速弯之王。
 - **泰坦 RALLY-X (TITAN RALLY-X)** — 全时四驱涡轮拉力钢炮，起步爆发强、路肩与非铺装抓地力拉满。
 
-### Driving Mechanics & Motorsport Polish / 拟真街机手感与细节
-- **GEVP 4 轮射线悬挂 + 轮胎滑移模型**：独立弹簧/阻尼/防倾杆、自动/手动 6 速变速箱、ABS/TCS/反打转向辅助与不同路面抓地力（柏油 / 路肩 / 草地 / 砂石）。
-- **漂移充能 + 氮气加速 + 加速带**：侧滑起漂触发轮胎白烟、地面刹车痕与实时漂移得分并快速充能氮气；喷射氮气附带双焰尾喷、动态 FOV 拉伸与速度线特效。
+### Driving Mechanics & Motorsport Polish / 极速轨道漂移与赛车细节
+- **GEVP 4 轮射线悬挂 + 街机轨道漂移（Ridge Racer / Asphalt 风格）**：保留 GEVP 真实 4 轮独立弹簧/阻尼/防倾杆、起伏坡度与不同路面反馈；入弯时按下 `Space`（或高速转弯轻点 `S` 刹车起漂）即刻一键切入 29°–46° 大角度轨道横滑，前轮自动反打、镜头动态外摆、漂移几乎不掉速（保持 93%–97%+ 入弯速度）且永不失控打转。
+- **S 弯一键切漂 + 三阶出弯小喷（Mini-Turbo）**：漂移中按内侧方向收紧贴弯心、松开或反打平滑拉宽；S 弯轻点 `Space + 反方向` 丝滑反手切漂；持续漂移快速蓄满 **LV.1 蓝焰 → LV.2 金焰 → LV.3 紫焰** 蓄力槽，出弯回正瞬间自动拉直车身并爆发最高 +46 km/h 漂移小喷（伴随三阶尾焰变色、速度线、HUD 横幅与变调音效）+ 急速氮气充能！
 - **完整 F1 发车与赛事系统**：5 盏 3D 龙门架发车红灯 + 弹射起步奖励、防作弊顺序检查点计圈、实时小地图、逆行警告、碰撞火花与镜头震动、多视角切换（近距 / 远距 / 车头 + 后视镜回看）。
 - **内置中 / 英双语切换 + 本地存档**：一键切换简体中文 / English，自动保存最佳单圈、奖牌、幽灵车轨迹、生涯战绩与音量/辅助设置（`user://apex_drift_save.json`）。
-- **全程序化动态音效**：实时随 RPM 变调的引擎声浪、随侧滑变化的胎噪、风噪、氮气喷射、换挡回火、碰撞闷响、发车提示音与可调背景合成波音乐。
+- **全程序化动态音效**：实时随 RPM 变调的引擎声浪、随侧滑变化的胎噪、风噪、氮气喷射、三阶漂移小喷音效、换挡回火、碰撞闷响、发车提示音与可调背景合成波音乐。
 
 ---
 
@@ -59,9 +65,9 @@ A complete 3D arcade-simcade racing game built with **Godot 4.4+** (GL Compatibi
 | Action / 操作 | Keyboard / 键盘 | Gamepad / 手柄 |
 |---|---|---|
 | Accelerate / 油门 | `W` / `↑` | `RT` |
-| Brake & Reverse / 刹车与倒车 | `S` / `↓` | `LT` |
-| Steer Left / Right / 左右转向 | `A` `D` / `←` `→` | Left Stick |
-| Handbrake & Drift / 手刹起漂 | `Space` | `B` / Circle |
+| Brake, Reverse & Brake-to-Drift / 刹车与高速点刹起漂 | `S` / `↓`（高速转弯轻点起漂） | `LT` |
+| Steer Left / Right / 左右转向（漂移中控内外线） | `A` `D` / `←` `→` | Left Stick |
+| Arcade Rail-Drift & S-Curve Switch / 一键轨道起漂 & S弯切漂 | `Space` | `B` / Circle |
 | Nitro Boost / 氮气加速 | `Shift` / `N` | `A` / Cross |
 | Cycle Camera / 切换视角 | `C` | `X` / Square |
 | Look Back / 后视回看 | `B` / `V` | — |
@@ -125,7 +131,11 @@ apex-drift-godot/
 │       └── results_screen.gd       # Post-race classification, medals & Grand Prix podium
 └── tests/
     ├── verify_game.gd              # Automated track, GEVP physics, AI & ghost test suite
-    └── verify_runner.tscn
+    ├── verify_runner.tscn
+    ├── deep_audit.gd               # Full 2-lap 3-circuit & 4-car arcade rail-drift audit suite
+    ├── deep_audit.tscn
+    ├── record_drift_showcase.gd    # Real-time 24fps Arcade Rail-Drift visual capture suite
+    └── record_drift_showcase.tscn
 ```
 
 ---

@@ -124,6 +124,8 @@ func _spawn_grid() -> void:
 		true,
 		player_slot
 	)
+	if not player_car.drift_boost_triggered.is_connected(_on_player_drift_boost):
+		player_car.drift_boost_triggered.connect(_on_player_drift_boost)
 	cars.append(player_car)
 
 	# Spawn 5 Competitive AI Rivals in Quick Race / Grand Prix
@@ -482,6 +484,18 @@ func _record_ghost_frame(delta: float) -> void:
 func _on_boost_pad_entered(body: Node) -> void:
 	if body is RaceCar:
 		(body as RaceCar).trigger_boost_pad()
+
+
+func _on_player_drift_boost(tier: int) -> void:
+	if hud == null or race_state != "racing":
+		return
+	var clamped := clampi(tier, 1, 3)
+	var col := UITheme.ACCENT_CYAN
+	if clamped == 2:
+		col = UITheme.ACCENT_GOLD
+	elif clamped >= 3:
+		col = Color(0.88, 0.34, 1.0)
+	hud.show_banner(GameState.t("hud_drift_boost_%d" % clamped), col, 1.35)
 
 
 func _on_player_respawn() -> void:

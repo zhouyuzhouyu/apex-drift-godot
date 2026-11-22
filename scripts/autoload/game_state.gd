@@ -96,6 +96,12 @@ const I18N := {
 		"hud_total": "总计",
 		"hud_nitro": "氮气",
 		"hud_drift": "漂移",
+		"hud_drift_lv1": "LV.1 蓝焰蓄力",
+		"hud_drift_lv2": "LV.2 金焰强喷",
+		"hud_drift_lv3": "LV.3 紫焰终极喷!",
+		"hud_drift_boost_1": "漂移小喷！MINI BOOST!",
+		"hud_drift_boost_2": "超级漂移喷射！SUPER BOOST!",
+		"hud_drift_boost_3": "终极漂移爆发！ULTRA BOOST!",
 		"hud_wrong_way": "⚠ 逆行警告 · 请调头",
 		"hud_final_lap": "最后一圈！",
 		"hud_lap_banner": "第 %d / %d 圈",
@@ -107,7 +113,7 @@ const I18N := {
 		"hud_cam_0": "近距视角",
 		"hud_cam_1": "远距视角",
 		"hud_cam_2": "车头视角",
-		"hud_controls_bar": "W/S 油门刹车 | A/D 转向 | Space 漂移 | Shift 氮气 | C 视角 | R 重置 | Esc 暂停",
+		"hud_controls_bar": "W/S 油门刹车 | A/D 转向 | Space/轻点S 轨道漂移 | Shift 氮气 | C 视角 | R 重置 | Esc 暂停",
 		"pause_title": "比赛暂停",
 		"pause_resume": "继续比赛",
 		"pause_restart": "重新开始",
@@ -139,7 +145,7 @@ const I18N := {
 		"res_new_record": "★ 刷新赛道纪录！",
 		"res_medal_earned": "获得奖牌：",
 		"ctrl_title": "驾驶控制指南",
-		"ctrl_body": "W / ↑  — 油门加速\nS / ↓  — 刹车 / 倒车\nA / D 或 ← / →  — 左右转向\nSpace  — 手刹起漂（漂移持续为氮气充能）\nShift / N  — 喷射氮气加速\nC  — 切换视角（近距 / 远距 / 车头）\nB / V  — 后视镜回看\nR  — 立即复位至赛道中央\nM  — 切换自动挡 / 手动挡（Q 降挡 / E 升挡）\nEsc / P  — 暂停菜单\n\n小技巧：发车倒计时亮绿灯瞬间踩住油门可触发【完美弹射起步】！\n入弯轻点手刹配合反打方向，既能高速过弯又能快速攒满氮气。"
+		"ctrl_body": "W / ↑  — 油门加速\nS / ↓  — 刹车 / 倒车（高速转弯轻点即可触发漂移！）\nA / D 或 ← / →  — 左右转向（漂移中按内侧收紧贴弯心，反打外侧拉宽出弯）\nSpace  — 一键轨道起漂（漂移几乎不掉速，并快速蓄力 3 阶出弯小喷 + 氮气！）\nShift / N  — 喷射氮气加速\nC  — 切换视角（近距 / 远距 / 车头）\nB / V  — 后视镜回看\nR  — 立即复位至赛道中央\nM  — 切换自动挡 / 手动挡（Q 降挡 / E 升挡）\nEsc / P  — 暂停菜单\n\n漂移秘籍：入弯时按住方向轻点 Space（或轻点 S）立刻锁入大角度轨道漂移；\n保持滑行蓄满 LV.1 蓝焰 → LV.2 金焰 → LV.3 紫焰，出弯回正瞬间自动爆发【漂移小喷】！"
 	},
 	"en": {
 		"game_title": "APEX DRIFT",
@@ -188,6 +194,12 @@ const I18N := {
 		"hud_total": "TOTAL",
 		"hud_nitro": "NITRO",
 		"hud_drift": "DRIFT",
+		"hud_drift_lv1": "LV.1 MINI BOOST",
+		"hud_drift_lv2": "LV.2 SUPER BOOST",
+		"hud_drift_lv3": "LV.3 ULTRA BOOST!",
+		"hud_drift_boost_1": "DRIFT MINI BOOST!",
+		"hud_drift_boost_2": "SUPER DRIFT BOOST!",
+		"hud_drift_boost_3": "ULTRA DRIFT BOOST!",
 		"hud_wrong_way": "⚠ WRONG WAY · TURN AROUND",
 		"hud_final_lap": "FINAL LAP!",
 		"hud_lap_banner": "LAP %d / %d",
@@ -199,7 +211,7 @@ const I18N := {
 		"hud_cam_0": "CHASE CLOSE",
 		"hud_cam_1": "CHASE FAR",
 		"hud_cam_2": "HOOD CAM",
-		"hud_controls_bar": "W/S Throttle/Brake | A/D Steer | Space Drift | Shift Nitro | C Cam | R Reset | Esc Pause",
+		"hud_controls_bar": "W/S Throttle/Brake | A/D Steer | Space/Tap S Rail-Drift | Shift Nitro | C Cam | R Reset | Esc Pause",
 		"pause_title": "RACE PAUSED",
 		"pause_resume": "RESUME",
 		"pause_restart": "RESTART RACE",
@@ -231,7 +243,7 @@ const I18N := {
 		"res_new_record": "★ NEW TRACK RECORD!",
 		"res_medal_earned": "MEDAL EARNED: ",
 		"ctrl_title": "DRIVING CONTROLS",
-		"ctrl_body": "W / Up  — Accelerate\nS / Down  — Brake / Reverse\nA / D or Left / Right  — Steer\nSpace  — Handbrake / Drift (charges Nitro!)\nShift / N  — Nitro Boost\nC  — Cycle Camera (Close / Far / Hood)\nB / V  — Look Back\nR  — Reset Car to Track\nM  — Toggle Auto/Manual Gearbox (Q Down / E Up)\nEsc / P  — Pause Menu\n\nPro Tip: Hold throttle in the green light launch window for a PERFECT START boost!\nTap Space entering corners to initiate controlled drifts and build Nitro."
+		"ctrl_body": "W / Up  — Accelerate\nS / Down  — Brake / Reverse (tap while turning to Brake-to-Drift!)\nA / D or Left / Right  — Steer (hold inside to hug apex, counter-steer to widen exit)\nSpace  — Instant Arcade Rail-Drift (near-zero speed loss + 3-tier Exit Boost & Nitro!)\nShift / N  — Nitro Boost\nC  — Cycle Camera (Close / Far / Hood)\nB / V  — Look Back\nR  — Reset Car to Track\nM  — Toggle Auto/Manual Gearbox (Q Down / E Up)\nEsc / P  — Pause Menu\n\nPro Tip: Tap Space or S into a turn to lock into a sweeping rail-drift.\nHold to charge LV.1 Cyan -> LV.2 Gold -> LV.3 Violet, then straighten out for an explosive EXIT BOOST!"
 	}
 }
 

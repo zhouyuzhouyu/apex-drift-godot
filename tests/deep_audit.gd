@@ -64,8 +64,8 @@ func _run_headless_full_lap_audit() -> Array[String]:
 	if not bgm_loop_ok:
 		failures.append("AudioManager bgm_loop is NOT set to loop!")
 
-	# A. Test all 4 cars' real acceleration, distinct top speeds, & drift/nitro behavior on Coastal Sunway
-	print("\n--- [A] ALL 4 CARS PERFORMANCE BENCHMARK ---")
+	# A. Test all 4 cars' real acceleration, distinct top speeds, & Arcade Rail-Drift benchmark
+	print("\n--- [A] ALL 4 CARS PERFORMANCE & ARCADE RAIL-DRIFT BENCHMARK ---")
 	var car_metrics: Array[Dictionary] = []
 	for car_idx in range(CarCatalog.get_cars().size()):
 		var spec := CarCatalog.get_car(car_idx)
@@ -82,52 +82,149 @@ func _run_headless_full_lap_audit() -> Array[String]:
 		var pc := rm.player_car
 		var t_100 := -1.0
 		var max_kmh := 0.0
-		var drifted := false
-		var max_drift_angle := 0.0
-		var nitro_start := pc.nitro
-		var nitro_after_drift := pc.nitro
-		for step in range(360): # 4.0s straight + 2.0s drift
-			if step < 240:
-				pc.throttle_input = 1.0
-				pc.brake_input = 0.0
-				pc.steering_input = 0.0
-				pc.handbrake_input = 0.0
-				pc.nitro_input = false
-			else:
-				# Initiate deliberate high-speed drift!
-				pc.throttle_input = 0.85
-				pc.steering_input = 1.0
-				pc.handbrake_input = 1.0 if step < 275 else 0.0
+		for step in range(240): # 4.0s straight on real Coastal Sunway tarmac
+			pc.throttle_input = 1.0
+			pc.brake_input = 0.0
+			pc.steering_input = 0.0
+			pc.handbrake_input = 0.0
+			pc.nitro_input = false
 			await get_tree().physics_frame
 			var spd := pc.get_speed_kmh()
 			max_kmh = maxf(max_kmh, spd)
 			if t_100 < 0.0 and spd >= 100.0:
 				t_100 = float(step) / 60.0
-			if pc.is_drifting:
-				drifted = true
+
+		# Move car onto a clean wide Road skidpad (y = 60) for barrier-free Rail-Drift precision test
+		var pad := StaticBody3D.new()
+		pad.name = "DriftSkidpad"
+		pad.collision_layer = 1
+		pad.collision_mask = 0
+		pad.add_to_group("Road")
+		var pad_col := CollisionShape3D.new()
+		var pad_box := BoxShape3D.new()
+		pad_box.size = Vector3(600.0, 1.0, 600.0)
+		pad_col.shape = pad_box
+		pad_col.position = Vector3(0.0, 59.5, 0.0)
+		pad.add_child(pad_col)
+		rm.add_child(pad)
+		await _wait_phys(2)
+
+		var pad_xf := Transform3D(Basis.IDENTITY, Vector3(0.0, 60.08, 0.0))
+		pc.reset_to_transform(pad_xf)
+		pc.controls_locked = false
+		pc.enable_arcade_drift = true
+		pc.linear_velocity = Vector3(0.0, 0.0, -48.0) # 172.8 km/h entry speed
+		pc.current_gear = 4
+		await _wait_phys(5)
+
+		var entry_kmh := pc.get_speed_kmh()
+		var boost_fired := [0]
+		pc.drift_boost_triggered.connect(func(tier: int): boost_fired[0] = maxi(boost_fired[0], tier))
+
+		var entered_rail := false
+		var max_drift_angle := 0.0
+		var min_drift_kmh := 999.0
+		var peak_tier := 0
+		var min_wheel_cs := 0.0
+		var nitro_start := pc.nitro
+		var nitro_after_drift := pc.nitro
+
+		# Phase 1: 1.75s Space + Left rail-drift
+		for step in range(105):
+			pc.throttle_input = 1.0
+			pc.brake_input = 0.0
+			pc.steering_input = 1.0
+			pc.handbrake_input = 1.0 if step < 12 else 0.0
+			pc.nitro_input = false
+			await get_tree().physics_frame
+			if pc.arcade_drift_active:
+				entered_rail = true
 				max_drift_angle = maxf(max_drift_angle, pc.drift_angle_deg)
+				min_drift_kmh = minf(min_drift_kmh, pc.get_speed_kmh())
+				peak_tier = maxi(peak_tier, pc.drift_boost_tier)
 				nitro_after_drift = maxf(nitro_after_drift, pc.nitro)
+				if pc.front_left_wheel != null:
+					min_wheel_cs = minf(min_wheel_cs, pc.front_left_wheel.rotation.y)
+
+		var pre_exit_kmh := pc.get_speed_kmh()
+		var post_exit_max_kmh := pre_exit_kmh
+		var exited_cleanly := false
+
+		# Phase 2: 0.70s Release straight -> Clean Exit + Exit Mini-Turbo!
+		for step in range(42):
+			pc.throttle_input = 1.0
+			pc.brake_input = 0.0
+			pc.steering_input = 0.0
+			pc.handbrake_input = 0.0
+			pc.nitro_input = false
+			await get_tree().physics_frame
+			if not pc.arcade_drift_active:
+				exited_cleanly = true
+			post_exit_max_kmh = maxf(post_exit_max_kmh, pc.get_speed_kmh())
+
+		var retention_pct := (min_drift_kmh / maxf(entry_kmh, 1.0)) * 100.0 if min_drift_kmh < 900.0 else 0.0
 		var total_dscore := pc.current_drift_score + float(pc.total_drift_score)
 		car_metrics.append({
 			"id": spec["id"],
 			"t_100": t_100,
 			"max_kmh": max_kmh,
-			"drifted": drifted,
+			"drifted": entered_rail,
 			"drift_score": total_dscore,
 			"max_angle": max_drift_angle
 		})
-		print("Car[%d] %s: 0-100=%.2fs max=%.1f km/h (cap=%.0f) drifted=%s max_ang=%.1fdeg drift_score=%.0f nitro %.1f->%.1f" % [
-			car_idx, spec["id"], t_100, max_kmh, pc.max_speed_kmh, str(drifted), max_drift_angle, total_dscore, nitro_start, nitro_after_drift
+		print("Car[%d] %s: 0-100=%.2fs max=%.1fkmh | rail=%s entry=%.0f->min=%.0f(%.0f%%) ang=%.1fdeg cs_wheel=%.2frad tier=%d->boost=LV%d exit_spd=%.0f->%.0f score=%.0f nitro %.0f->%.0f" % [
+			car_idx, spec["id"], t_100, max_kmh, str(entered_rail), entry_kmh, min_drift_kmh, retention_pct, max_drift_angle, min_wheel_cs, peak_tier, boost_fired[0], pre_exit_kmh, post_exit_max_kmh, total_dscore, nitro_start, nitro_after_drift
 		])
-		if not drifted:
-			failures.append("Car %s failed to drift in 2s drift benchmark" % spec["id"])
+		if not entered_rail:
+			failures.append("Car %s failed to enter arcade rail-drift" % spec["id"])
+		if retention_pct < 85.0:
+			failures.append("Car %s rail-drift speed retention too low: %.1f%% (expected >= 85%%)" % [spec["id"], retention_pct])
+		if max_drift_angle < 22.0 or max_drift_angle > 54.0:
+			failures.append("Car %s rail-drift angle out of arcade range: %.1fdeg" % [spec["id"], max_drift_angle])
+		if min_wheel_cs > -0.15:
+			failures.append("Car %s front wheels failed to visually counter-steer (rot.y=%.2f)" % [spec["id"], min_wheel_cs])
+		if not exited_cleanly or boost_fired[0] < 2:
+			failures.append("Car %s failed clean exit mini-turbo (exited=%s boost_tier=%d)" % [spec["id"], str(exited_cleanly), boost_fired[0]])
+		if post_exit_max_kmh <= pre_exit_kmh + 6.0:
+			failures.append("Car %s exit mini-turbo did not boost speed (%.1f -> %.1f)" % [spec["id"], pre_exit_kmh, post_exit_max_kmh])
+
+		# Extra mechanics check on Car 0: Brake-to-Drift (S tap + D) & S-Curve Chain Switch (Left -> Right)
+		if car_idx == 0:
+			pc.reset_to_transform(pad_xf)
+			pc.controls_locked = false
+			pc.enable_arcade_drift = true
+			pc.linear_velocity = Vector3(0.0, 0.0, -40.0) # 144 km/h
+			pc.current_gear = 3
+			await _wait_phys(4)
+			# Trigger Brake-to-Drift right (steer=-1.0 + brake tap)
+			pc.throttle_input = 1.0
+			pc.steering_input = -1.0
+			pc.brake_input = 0.85
+			pc.handbrake_input = 0.0
+			await _wait_phys(2)
+			pc.brake_input = 0.0
+			await _wait_phys(18)
+			var b2d_ok := pc.arcade_drift_active and pc.drift_dir < -0.5
+			# Now S-Curve Chain Switch to LEFT (steer=+1.0 + Space tap!)
+			pc.steering_input = 1.0
+			pc.handbrake_input = 1.0
+			await _wait_phys(2)
+			pc.handbrake_input = 0.0
+			await _wait_phys(10)
+			var scurve_ok := pc.arcade_drift_active and pc.drift_dir > 0.5
+			print("   Arcade Drift Extras: Brake-to-Drift=%s | S-Curve Chain-Switch=%s" % [str(b2d_ok), str(scurve_ok)])
+			if not b2d_ok:
+				failures.append("Brake-to-Drift (S tap + steer) failed to engage right rail-drift")
+			if not scurve_ok:
+				failures.append("S-Curve Chain Switch (Space + opposite steer) failed to flip drift_dir")
+
 		rm.queue_free()
 		await _wait_phys(3)
 
-	# Assert kaze_drift earns > 120 drift score and beats all other cars!
+	# Assert kaze_drift earns > 400 drift score and beats all other cars!
 	var kaze_score := float(car_metrics[1]["drift_score"])
-	if kaze_score <= 120.0:
-		failures.append("kaze_drift drift_score too low: %.1f (expected > 120)" % kaze_score)
+	if kaze_score <= 400.0:
+		failures.append("kaze_drift drift_score too low: %.1f (expected > 400)" % kaze_score)
 	for i in range(car_metrics.size()):
 		if i != 1 and float(car_metrics[i]["drift_score"]) >= kaze_score:
 			failures.append("kaze_drift (%.0f) did not beat %s (%.0f) in drift score" % [kaze_score, car_metrics[i]["id"], car_metrics[i]["drift_score"]])

@@ -276,7 +276,7 @@ static func _build_guardrail_wall(
 ) -> void:
 	var n := spline.sample_count()
 	var vis_h := 1.15
-	var col_h := 3.0
+	var col_h := 4.0
 	var vis_st := SurfaceTool.new()
 	vis_st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var col_st := SurfaceTool.new()
@@ -294,24 +294,33 @@ static func _build_guardrail_wall(
 		var b1 := spline.points[nxt] + spline.rights[nxt] * lat_offset - spline.ups[nxt] * 0.15
 		var t0 := b0 + spline.ups[i] * vis_h
 		var t1 := b1 + spline.ups[nxt] * vis_h
-		var ct0 := b0 + spline.ups[i] * col_h
-		var ct1 := b1 + spline.ups[nxt] * col_h
+
+		# Extend collision wall 0.5m below road edge and 4.0m high, plus a 0.55m backup inward wall
+		var cb0 := spline.points[i] + spline.rights[i] * lat_offset - spline.ups[i] * 0.50
+		var cb1 := spline.points[nxt] + spline.rights[nxt] * lat_offset - spline.ups[nxt] * 0.50
+		var ct0 := cb0 + spline.ups[i] * (col_h + 0.50)
+		var ct1 := cb1 + spline.ups[nxt] * (col_h + 0.50)
+
+		var out_shift := -0.55 if is_left else 0.55
+		var bb0 := cb0 + spline.rights[i] * out_shift
+		var bb1 := cb1 + spline.rights[nxt] * out_shift
+		var bt0 := ct0 + spline.rights[i] * out_shift
+		var bt1 := ct1 + spline.rights[nxt] * out_shift
 
 		var inward_n0 := spline.rights[i] if is_left else -spline.rights[i]
 		var inward_n1 := spline.rights[nxt] if is_left else -spline.rights[nxt]
 
-		# Double-sided visual guardrail + clean inward-facing collision wall
+		# Double-sided visual guardrail + strictly inward-facing double-layer collision wall (prevents high-speed tunneling!)
 		if is_left:
-			# Inward faces +right: looking from +right toward -right, forward (-Z) is right-to-left -> clockwise is b0 -> t0 -> t1
 			_add_quad(vis_st, b0, t0, t1, b1, inward_n0, inward_n1, u0, u1)
 			_add_quad(vis_st, b1, t1, t0, b0, -inward_n1, -inward_n0, u1, u0)
-			_add_quad(col_st, b0, ct0, ct1, b1, inward_n0, inward_n1, u0, u1)
-			_add_quad(col_st, b1, ct1, ct0, b0, -inward_n1, -inward_n0, u1, u0)
+			_add_quad(col_st, cb0, ct0, ct1, cb1, inward_n0, inward_n1, u0, u1)
+			_add_quad(col_st, bb0, bt0, bt1, bb1, inward_n0, inward_n1, u0, u1)
 		else:
 			_add_quad(vis_st, b1, t1, t0, b0, inward_n1, inward_n0, u1, u0)
 			_add_quad(vis_st, b0, t0, t1, b1, -inward_n0, -inward_n1, u0, u1)
-			_add_quad(col_st, b1, ct1, ct0, b0, inward_n1, inward_n0, u1, u0)
-			_add_quad(col_st, b0, ct0, ct1, b1, -inward_n0, -inward_n1, u0, u1)
+			_add_quad(col_st, cb1, ct1, ct0, cb0, inward_n1, inward_n0, u1, u0)
+			_add_quad(col_st, bb1, bt1, bt0, bb0, inward_n1, inward_n0, u1, u0)
 
 	var vis_mesh := vis_st.commit()
 	var mi := MeshInstance3D.new()

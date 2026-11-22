@@ -65,16 +65,26 @@ func _physics_process(delta: float) -> void:
 	car_fwd.y *= 0.25
 	car_fwd = car_fwd.normalized()
 
-	# Blend travel velocity into camera heading so drifting swings the tail visibly!
+	# Blend travel velocity into camera heading so drifting showcases the dramatic sideways silhouette!
 	var vel_horiz := Vector3(target.linear_velocity.x, 0.0, target.linear_velocity.z)
 	var desired_dir := car_fwd
-	if vel_horiz.length() > 8.0 and target.local_velocity.z < -1.0:
+	if target.arcade_drift_active:
+		var drift_travel := Vector3(target._drift_travel_dir.x, 0.0, target._drift_travel_dir.z)
+		if drift_travel.length_squared() > 0.001:
+			desired_dir = drift_travel.normalized().lerp(car_fwd, 0.16).normalized()
+	elif vel_horiz.length() > 8.0 and target.local_velocity.z < -1.0:
 		desired_dir = car_fwd.lerp(vel_horiz.normalized(), 0.38).normalized()
 
-	_smoothed_forward = _smoothed_forward.slerp(desired_dir, clampf(delta * 6.5, 0.0, 1.0)).normalized()
+	var heading_lerp := 8.5 if target.arcade_drift_active else 6.5
+	_smoothed_forward = _smoothed_forward.slerp(desired_dir, clampf(delta * heading_lerp, 0.0, 1.0)).normalized()
 
 	var speed_ratio := clampf(target.get_speed_kmh() / 260.0, 0.0, 1.0)
-	var nitro_boost_fov := 9.5 if (target.nitro_active or target.boost_pad_timer > 0.0) else 0.0
+	var nitro_boost_fov := 0.0
+	if target.nitro_active or target.boost_pad_timer > 0.0:
+		nitro_boost_fov = maxf(nitro_boost_fov, 9.5)
+	if target.drift_exit_boost_timer > 0.0:
+		nitro_boost_fov = maxf(nitro_boost_fov, 7.0 + float(target.drift_exit_boost_tier) * 2.8)
+	var drift_fov_add := 3.5 if target.arcade_drift_active else 0.0
 
 	if camera_mode == 2 and not looking_back:
 		# Hood / Bumper Cam — ultra crisp sense of speed
@@ -93,24 +103,32 @@ func _physics_process(delta: float) -> void:
 		else:
 			right = right.normalized()
 
-		var target_dist := dist + speed_ratio * 0.65 + (0.65 if nitro_boost_fov > 0.0 else 0.0)
+		# Swing camera dynamically toward the OUTSIDE of the corner during rail-drift!
+		# Left drift (drift_dir = +1) -> outside is +right; Right drift (drift_dir = -1) -> outside is -right
+		var target_lat := 0.0
+		if target.arcade_drift_active and not looking_back:
+			var slip_norm := clampf(target.drift_angle_deg / 38.0, 0.35, 1.20)
+			target_lat = target.drift_dir * (1.10 if camera_mode == 0 else 1.45) * slip_norm
+
+		var target_dist := dist + speed_ratio * 0.65 + (0.65 if nitro_boost_fov > 0.0 else 0.0) + (0.45 if target.arcade_drift_active else 0.0)
 		var cur_rel := global_position - target.global_position
 		var cur_lat := cur_rel.dot(right)
 		var cur_y := cur_rel.y
 		var cur_back := -cur_rel.dot(dir)
 
-		var smooth_lat := lerpf(cur_lat, 0.0, clampf(delta * 10.5, 0.0, 1.0))
+		var smooth_lat := lerpf(cur_lat, target_lat, clampf(delta * (7.2 if target.arcade_drift_active else 10.5), 0.0, 1.0))
 		var smooth_y := lerpf(cur_y, height, clampf(delta * 10.5, 0.0, 1.0))
 		var smooth_back := lerpf(cur_back, target_dist, clampf(delta * 16.0, 0.0, 1.0))
 		var min_back := dist * 0.92
-		var max_back := dist + speed_ratio * 0.65 + (0.85 if nitro_boost_fov > 0.0 else 0.30)
+		var max_back := dist + speed_ratio * 0.65 + (1.05 if nitro_boost_fov > 0.0 else 0.70)
 		smooth_back = clampf(smooth_back, min_back, max_back)
 
 		global_position = target.global_position - dir * smooth_back + right * smooth_lat + Vector3.UP * smooth_y
-		var look_ahead := target.global_position + dir * 10.0 + Vector3.UP * 1.05
+		var look_bias := -right * (target.drift_dir * 0.85) if (target.arcade_drift_active and not looking_back) else Vector3.ZERO
+		var look_ahead := target.global_position + dir * 10.5 + look_bias + Vector3.UP * 1.05
 		look_at(look_ahead, Vector3.UP)
 		var base_fov := 64.0 if camera_mode == 0 else 68.0
-		_current_fov = lerpf(_current_fov, base_fov + speed_ratio * 14.0 + nitro_boost_fov, delta * 6.0)
+		_current_fov = lerpf(_current_fov, base_fov + speed_ratio * 14.0 + nitro_boost_fov + drift_fov_add, delta * 6.0)
 
 	# Apply collision impact micro-shake
 	if _shake_amount > 0.005:

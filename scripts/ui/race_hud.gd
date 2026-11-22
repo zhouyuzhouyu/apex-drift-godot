@@ -24,6 +24,8 @@ var _banner_timer: float = 0.0
 var _wrong_way_panel: PanelContainer
 var _drift_panel: PanelContainer
 var _drift_label: Label
+var _drift_tier_label: Label
+var _drift_bar_canvas: Control
 var _controls_bar: Label
 var _lights_panel: PanelContainer
 var _lights_canvas: Control
@@ -48,7 +50,7 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if GameState.language_changed.is_connected(_on_language_changed):
 		GameState.language_changed.disconnect(_on_language_changed)
-	for c in [_lights_canvas, _gauge_canvas, _minimap_canvas, _speedlines_canvas]:
+	for c in [_lights_canvas, _gauge_canvas, _minimap_canvas, _speedlines_canvas, _drift_bar_canvas]:
 		if c != null and c is _HUDDrawOverlay:
 			(c as _HUDDrawOverlay).draw_cb = Callable()
 
@@ -203,22 +205,40 @@ func _build_ui() -> void:
 	ww_lbl.add_theme_color_override("font_color", Color.WHITE)
 	_wrong_way_panel.add_child(ww_lbl)
 
-	# --- DRIFT COMBO Popup ---
+	# --- DRIFT COMBO & 3-TIER CHARGE GAUGE Popup ---
 	_drift_panel = PanelContainer.new()
 	_drift_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	_drift_panel.offset_left = -135
-	_drift_panel.offset_right = 135
-	_drift_panel.offset_top = -126
-	_drift_panel.offset_bottom = -74
-	_drift_panel.add_theme_stylebox_override("panel", UITheme.make_panel_box(Color(0.08, 0.12, 0.22, 0.88), UITheme.ACCENT_GOLD, 10, 2, 14, 8))
+	_drift_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_drift_panel.offset_left = -165
+	_drift_panel.offset_right = 165
+	_drift_panel.offset_top = -64
+	_drift_panel.offset_bottom = -64
+	_drift_panel.add_theme_stylebox_override("panel", UITheme.make_panel_box(Color(0.06, 0.09, 0.17, 0.90), UITheme.ACCENT_CYAN, 10, 2, 14, 8))
 	_drift_panel.visible = false
 	_root.add_child(_drift_panel)
+
+	var drift_vbox := VBoxContainer.new()
+	drift_vbox.add_theme_constant_override("separation", 4)
+	_drift_panel.add_child(drift_vbox)
 
 	_drift_label = Label.new()
 	_drift_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_drift_label.add_theme_font_size_override("font_size", 22)
-	_drift_label.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
-	_drift_panel.add_child(_drift_label)
+	_drift_label.add_theme_color_override("font_color", Color.WHITE)
+	drift_vbox.add_child(_drift_label)
+
+	_drift_bar_canvas = _HUDDrawOverlay.new()
+	_drift_bar_canvas.custom_minimum_size = Vector2(280, 14)
+	_drift_bar_canvas.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_drift_bar_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_drift_bar_canvas.draw_cb = _draw_drift_charge_bar
+	drift_vbox.add_child(_drift_bar_canvas)
+
+	_drift_tier_label = Label.new()
+	_drift_tier_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_drift_tier_label.add_theme_font_size_override("font_size", 13)
+	_drift_tier_label.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
+	drift_vbox.add_child(_drift_tier_label)
 
 	# --- BOTTOM-LEFT: Custom Vector Live Minimap ---
 	_minimap_canvas = _HUDDrawOverlay.new()
@@ -336,6 +356,8 @@ func update_hud(delta: float, race_time: float) -> void:
 	_gauge_canvas.queue_redraw()
 	_minimap_canvas.queue_redraw()
 	_speedlines_canvas.queue_redraw()
+	if _drift_bar_canvas != null and _drift_panel.visible:
+		_drift_bar_canvas.queue_redraw()
 
 
 func _refresh_dynamic_texts() -> void:
@@ -361,10 +383,43 @@ func _refresh_dynamic_texts() -> void:
 	_time_best.text = "%s  %s" % [GameState.t("hud_best"), GameState.format_time(display_best, false)]
 	_time_delta.text = "%s  %s" % [GameState.t("hud_total"), GameState.format_time(_elapsed_race_time, true)]
 
-	# Drift Combo Popup (trigger cleanly at >= 5 pts or during active drift)
-	if player_car.current_drift_score >= 5.0 or player_car.is_drifting:
+	# Drift Combo & 3-Tier Exit Boost Charge Popup
+	var show_drift := player_car.arcade_drift_active or player_car.is_drifting or player_car.current_drift_score >= 5.0
+	if show_drift:
 		_drift_panel.visible = true
-		_drift_label.text = "%s  +%d" % [GameState.t("hud_drift"), int(round(player_car.current_drift_score))]
+		var tier := player_car.drift_boost_tier
+		var tier_col := UITheme.ACCENT_CYAN
+		if tier >= 3:
+			tier_col = Color(0.88, 0.34, 1.0)
+		elif tier == 2:
+			tier_col = UITheme.ACCENT_GOLD
+		elif tier == 1:
+			tier_col = UITheme.ACCENT_CYAN
+		else:
+			tier_col = Color(0.68, 0.80, 0.94)
+
+		_drift_label.text = "%s  +%d  (%.0f°)" % [
+			GameState.t("hud_drift"),
+			int(round(player_car.current_drift_score)),
+			player_car.drift_angle_deg
+		]
+		_drift_label.add_theme_color_override("font_color", tier_col if tier >= 1 else Color.WHITE)
+
+		if tier >= 1:
+			_drift_tier_label.text = GameState.t("hud_drift_lv%d" % clampi(tier, 1, 3))
+			_drift_tier_label.add_theme_color_override("font_color", tier_col)
+			_drift_tier_label.visible = true
+		elif player_car.arcade_drift_active:
+			_drift_tier_label.text = GameState.t("hud_drift_lv1")
+			_drift_tier_label.add_theme_color_override("font_color", Color(0.55, 0.68, 0.84))
+			_drift_tier_label.visible = true
+		else:
+			_drift_tier_label.visible = false
+
+		_drift_bar_canvas.visible = player_car.arcade_drift_active or player_car.drift_charge_progress > 0.01
+		var sb := _drift_panel.get_theme_stylebox("panel")
+		if sb is StyleBoxFlat:
+			(sb as StyleBoxFlat).border_color = tier_col
 	else:
 		_drift_panel.visible = false
 
@@ -498,24 +553,64 @@ func _draw_tachometer(ctrl: Control) -> void:
 	ctrl.draw_rect(nb_rect, nitro_col if player_car.nitro_active else UITheme.BORDER_SUBTLE, false, 1.5)
 
 
+func _draw_drift_charge_bar(ctrl: Control) -> void:
+	if player_car == null:
+		return
+	var sz := ctrl.size
+	var gap := 6.0
+	var seg_w := (sz.x - gap * 2.0) / 3.0
+	var seg_h := sz.y
+	var prog := clampf(player_car.drift_charge_progress, 0.0, 3.0)
+	var tier_cols := [
+		UITheme.ACCENT_CYAN,
+		UITheme.ACCENT_GOLD,
+		Color(0.88, 0.34, 1.0)
+	]
+
+	for i in range(3):
+		var x := float(i) * (seg_w + gap)
+		var rect := Rect2(Vector2(x, 1.0), Vector2(seg_w, seg_h - 2.0))
+		ctrl.draw_rect(rect, Color(0.06, 0.09, 0.16, 0.94), true)
+		var fill_frac := clampf(prog - float(i), 0.0, 1.0)
+		var col: Color = tier_cols[i]
+		if fill_frac > 0.005:
+			var fw := (rect.size.x - 2.0) * fill_frac
+			ctrl.draw_rect(Rect2(rect.position + Vector2(1.0, 1.0), Vector2(fw, rect.size.y - 2.0)), col, true)
+			if fill_frac >= 0.995:
+				# Bright top highlight when a tier is fully charged!
+				ctrl.draw_rect(Rect2(rect.position + Vector2(1.0, 1.0), Vector2(fw, 3.0)), Color(1.0, 1.0, 1.0, 0.45), true)
+		var border_col := col if fill_frac >= 0.995 else Color(0.28, 0.36, 0.50, 0.75)
+		ctrl.draw_rect(rect, border_col, false, 1.5)
+
+
 func _draw_speed_effect(ctrl: Control) -> void:
 	if player_car == null:
 		return
-	var boosting := player_car.nitro_active or player_car.boost_pad_timer > 0.0 or player_car.launch_boost_timer > 0.0
+	var exit_boost := player_car.drift_exit_boost_timer > 0.0
+	var boosting := player_car.nitro_active or player_car.boost_pad_timer > 0.0 or player_car.launch_boost_timer > 0.0 or exit_boost
 	var spd := player_car.get_speed_kmh()
 	if not boosting and spd < 195.0:
 		return
-	var intensity := 0.55 if boosting else clampf((spd - 195.0) / 110.0, 0.0, 0.35)
+	var intensity := 0.62 if exit_boost else (0.55 if boosting else clampf((spd - 195.0) / 110.0, 0.0, 0.35))
 	var sz := ctrl.size
 	var center := sz * 0.5
-	var col := Color(0.0, 0.90, 1.0, intensity * 0.42) if boosting else Color(1.0, 1.0, 1.0, intensity * 0.22)
+	var col := Color(1.0, 1.0, 1.0, intensity * 0.22)
+	if exit_boost:
+		if player_car.drift_exit_boost_tier >= 3:
+			col = Color(0.88, 0.32, 1.0, intensity * 0.52)
+		elif player_car.drift_exit_boost_tier == 2:
+			col = Color(1.0, 0.78, 0.16, intensity * 0.48)
+		else:
+			col = Color(0.0, 0.92, 1.0, intensity * 0.44)
+	elif boosting:
+		col = Color(0.0, 0.90, 1.0, intensity * 0.42)
 	var phase := float(Time.get_ticks_msec() % 1000) * 0.015
 	for i in range(18):
 		var ang := float(i) * TAU / 18.0 + sin(phase + float(i)) * 0.04
 		var dir := Vector2(cos(ang), sin(ang))
 		var r_outer := maxf(sz.x, sz.y) * 0.62
-		var r_inner := r_outer * (0.72 if boosting else 0.82)
-		ctrl.draw_line(center + dir * r_inner, center + dir * r_outer, col, 2.4 if boosting else 1.5, true)
+		var r_inner := r_outer * (0.68 if exit_boost else (0.72 if boosting else 0.82))
+		ctrl.draw_line(center + dir * r_inner, center + dir * r_outer, col, 2.8 if exit_boost else (2.4 if boosting else 1.5), true)
 
 
 class _HUDDrawOverlay extends Control:

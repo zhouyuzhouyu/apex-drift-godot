@@ -111,6 +111,7 @@ static func build_car_visuals(parent: Node3D, style: String, livery: Dictionary,
 	return {
 		"brake_mat": brake_mat,
 		"headlight_mat": headlight_mat,
+		"flame_mat": flame_mat,
 		"nitro_flames": nitro_flames
 	}
 

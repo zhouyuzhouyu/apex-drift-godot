@@ -30,6 +30,8 @@ func setup(
 	p_boost_distances: PackedFloat32Array = PackedFloat32Array()
 ) -> void:
 	car = p_car
+	if car != null:
+		car.enable_arcade_drift = false
 	spline = p_spline
 	all_cars = p_all_cars
 	player_car = p_player

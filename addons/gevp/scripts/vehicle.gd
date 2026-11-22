@@ -422,6 +422,7 @@ class Axle:
 		return slip
 
 var defer_initialization := false
+var arcade_drift_override := false
 
 func _ready():
 	if not defer_initialization:
@@ -661,14 +662,16 @@ func _physics_process(delta : float) -> void:
 	
 	process_drag()
 	process_braking(delta)
-	process_steering(delta)
+	if not arcade_drift_override:
+		process_steering(delta)
 	process_throttle(delta)
 	process_motor(delta)
 	process_clutch(delta)
 	process_transmission()
 	process_drive(delta)
 	process_forces(delta)
-	process_stability()
+	if not arcade_drift_override:
+		process_stability()
 
 func process_drag() -> void:
 	var drag := 0.5 * air_density * pow(speed, 2.0) * frontal_area * coefficient_of_drag

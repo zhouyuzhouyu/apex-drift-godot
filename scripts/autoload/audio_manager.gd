@@ -77,6 +77,7 @@ func _build_streams() -> void:
 	sfx_streams["collision"] = _make_impact_thud(0.24)
 	sfx_streams["gear_shift"] = _make_gear_pop(0.08)
 	sfx_streams["nitro_ignite"] = _make_sweep(180.0, 740.0, 0.25, 0.55)
+	sfx_streams["drift_boost"] = _make_sweep(260.0, 1180.0, 0.30, 0.62)
 	sfx_streams["boost_pad"] = _make_sweep(420.0, 1480.0, 0.22, 0.48)
 	sfx_streams["ui_click"] = _make_tone(680.0, 0.045, 0.28, "sine")
 	sfx_streams["ui_confirm"] = _make_arpeggio([520.0, 780.0], 0.05, 0.34)

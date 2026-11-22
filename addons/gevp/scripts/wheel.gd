@@ -190,14 +190,20 @@ func process_forces(opposite_compression : float, braking : bool, delta : float)
 	var compression := process_suspension(opposite_compression, delta)
 	
 	if is_colliding() and last_collider:
-		process_tires(braking, delta)
 		var contact := last_collision_point - vehicle.global_position
 		if spring_force > 0.0:
 			vehicle.apply_force(last_collision_normal * spring_force, contact)
 		else:
 			## Apply a small amount of downward force if there is no spring force
 			vehicle.apply_force(-global_transform.basis.y * vehicle.mass, global_position - vehicle.global_position)
-		
+
+		if vehicle.arcade_drift_override:
+			force_vector = Vector2.ZERO
+			slip_vector = Vector2(signf(local_velocity.x) * 0.65, 0.35)
+			spin = maxf(absf(vehicle.speed) / maxf(tire_radius, 0.1), 22.0) * (1.28 if is_driven else 1.0)
+			return compression
+
+		process_tires(braking, delta)
 		vehicle.apply_force(global_transform.basis.x * force_vector.x, contact)
 		vehicle.apply_force(global_transform.basis.z * force_vector.y, contact)
 		

@@ -19,6 +19,8 @@ func setup(p_car: RaceCar) -> void:
 		car.impact_occurred.connect(_on_impact)
 	if not car.boost_pad_hit.is_connected(_on_boost_pad):
 		car.boost_pad_hit.connect(_on_boost_pad)
+	if not car.drift_boost_triggered.is_connected(_on_drift_boost):
+		car.drift_boost_triggered.connect(_on_drift_boost)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -81,7 +83,7 @@ func _physics_process(_delta: float) -> void:
 		car.throttle_input,
 		car.get_speed_kmh(),
 		car.wheel_slip_intensity,
-		car.nitro_active or car.boost_pad_timer > 0.0
+		car.nitro_active or car.boost_pad_timer > 0.0 or car.drift_exit_boost_timer > 0.0
 	)
 
 
@@ -95,3 +97,7 @@ func _on_impact(intensity: float) -> void:
 
 func _on_boost_pad() -> void:
 	AudioManager.play_sfx("boost_pad", 1.0, 0.9)
+
+
+func _on_drift_boost(tier: int) -> void:
+	AudioManager.play_sfx("drift_boost", 0.92 + float(tier) * 0.16, 0.95)
