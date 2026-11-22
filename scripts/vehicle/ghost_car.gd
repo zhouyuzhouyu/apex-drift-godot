@@ -33,10 +33,20 @@ func setup(p_car_idx: int, p_frames: Array) -> void:
 		_apply_frame(0)
 
 
+func park_at_start() -> void:
+	playback_time = 0.0
+	is_playing = false
+	visible = frames.size() >= 2
+	if visible:
+		_apply_frame(0)
+
+
 func start_lap() -> void:
 	playback_time = 0.0
 	is_playing = frames.size() >= 2
 	visible = is_playing
+	if is_playing:
+		_apply_frame(0)
 
 
 func _process(delta: float) -> void:

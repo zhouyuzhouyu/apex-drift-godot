@@ -5,7 +5,10 @@ extends Node
 ## ghost lap recordings, settings, and Chinese/English localization.
 
 const SAVE_PATH := "user://apex_drift_save.json"
+const TEST_SAVE_PATH := "user://apex_drift_test_save.json"
 const GP_POINTS := [10, 8, 6, 4, 2, 1]
+
+var test_mode: bool = false
 
 signal language_changed(lang: String)
 signal settings_changed
@@ -86,6 +89,7 @@ const I18N := {
 		"medal_none": "未获牌",
 		"career_stats": "生涯战绩：完赛 %d 场 · 冠军 %d 次 · 锦标赛 %d 冠",
 		"hud_pos": "排名",
+		"hud_solo": "单人",
 		"hud_lap": "圈数",
 		"hud_time": "本圈",
 		"hud_best": "最佳",
@@ -177,6 +181,7 @@ const I18N := {
 		"medal_none": "NONE",
 		"career_stats": "CAREER: %d Races · %d Wins · %d GP Titles",
 		"hud_pos": "POS",
+		"hud_solo": "SOLO",
 		"hud_lap": "LAP",
 		"hud_time": "TIME",
 		"hud_best": "BEST",
@@ -235,6 +240,28 @@ func _ready() -> void:
 	load_save()
 
 
+func _exit_tree() -> void:
+	UITheme.clear_cache()
+	TextureFactory.clear_cache()
+
+
+func enable_test_mode() -> void:
+	test_mode = true
+	records.clear()
+	gp_standings.clear()
+	gp_last_round_results.clear()
+	career = {
+		"races_finished": 0,
+		"wins": 0,
+		"gp_titles": 0,
+		"total_drift_score": 0
+	}
+
+
+func _get_save_path() -> String:
+	return TEST_SAVE_PATH if test_mode else SAVE_PATH
+
+
 func t(key: String) -> String:
 	var lang: String = settings.get("language", "zh")
 	if I18N.has(lang) and I18N[lang].has(key):
@@ -279,7 +306,6 @@ func advance_grand_prix_round() -> bool:
 
 
 func record_grand_prix_results(results: Array[Dictionary]) -> void:
-	gp_last_round_results = results.duplicate(true)
 	for i in range(results.size()):
 		var r: Dictionary = results[i]
 		var pts: int = GP_POINTS[mini(i, GP_POINTS.size() - 1)]
@@ -287,15 +313,19 @@ func record_grand_prix_results(results: Array[Dictionary]) -> void:
 		gp_standings[dname] = int(gp_standings.get(dname, 0)) + pts
 		r["round_points"] = pts
 		r["total_points"] = gp_standings[dname]
+	gp_last_round_results = results.duplicate(true)
 	if gp_round == TrackCatalog.get_tracks().size() - 1:
-		# Check if player won championship
-		var player_pts: int = int(gp_standings.get("PLAYER", 0))
-		var is_champ := true
-		for dname in gp_standings:
-			if dname != "PLAYER" and int(gp_standings[dname]) > player_pts:
-				is_champ = false
-				break
-		if is_champ:
+		# Award championship title using identical tie-break as ResultsScreen podium:
+		# total_points descending, then final-round finish_time ascending
+		var standings_rows := results.duplicate()
+		standings_rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			var pa := int(a.get("total_points", 0))
+			var pb := int(b.get("total_points", 0))
+			if pa != pb:
+				return pa > pb
+			return float(a.get("finish_time", INF)) < float(b.get("finish_time", INF))
+		)
+		if standings_rows.size() > 0 and bool(standings_rows[0].get("is_player", false)):
 			career["gp_titles"] = int(career.get("gp_titles", 0)) + 1
 			save_data()
 
@@ -354,8 +384,8 @@ func _find_track_by_id(track_id: String) -> Dictionary:
 	return {}
 
 
-static func format_time(sec: float) -> String:
-	if sec <= 0.0 or not is_finite(sec):
+static func format_time(sec: float, allow_zero: bool = false) -> String:
+	if not is_finite(sec) or sec < 0.0 or (not allow_zero and sec <= 0.0):
 		return "--:--.--"
 	var mins := int(sec / 60.0)
 	var rem := sec - float(mins) * 60.0
@@ -377,16 +407,17 @@ func save_data() -> void:
 			"laps": lap_count
 		}
 	}
-	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	var f := FileAccess.open(_get_save_path(), FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(payload))
 		f.close()
 
 
 func load_save() -> void:
-	if not FileAccess.file_exists(SAVE_PATH):
+	var path := _get_save_path()
+	if not FileAccess.file_exists(path):
 		return
-	var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	var f := FileAccess.open(path, FileAccess.READ)
 	if not f:
 		return
 	var parsed = JSON.parse_string(f.get_as_text())

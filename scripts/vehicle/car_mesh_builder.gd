@@ -23,7 +23,7 @@ static func build_car_visuals(parent: Node3D, style: String, livery: Dictionary,
 	headlight_mat.albedo_color = Color(1.0, 0.98, 0.90)
 	headlight_mat.emission_enabled = true
 	headlight_mat.emission = Color(1.0, 0.96, 0.84)
-	headlight_mat.emission_energy_multiplier = 2.6 if not is_ghost else 0.9
+	headlight_mat.emission_energy_multiplier = 1.45 if not is_ghost else 0.70
 	if is_ghost:
 		headlight_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		headlight_mat.albedo_color.a = 0.45
@@ -128,9 +128,9 @@ static func _build_coupe_body(
 	# Lower sculpted fuselage stations: [z, half_width, y_bottom, y_top]
 	var hull_stations := [
 		[-2.08, 0.72, 0.30, 0.48],
-		[-1.85, 0.88, 0.28, 0.64],
-		[-1.05, 0.94, 0.27, 0.74],
-		[ 0.95, 0.96, 0.27, 0.78],
+		[-1.85, 0.88, 0.28, 0.68],
+		[-1.05, 0.94, 0.27, 0.78],
+		[ 0.95, 0.96, 0.27, 0.80],
 		[ 1.85, 0.91, 0.30, 0.80],
 		[ 2.04, 0.78, 0.36, 0.74]
 	]
@@ -149,28 +149,28 @@ static func _build_coupe_body(
 	_add_box(parent, Vector3(1.22, 0.06, 0.88), Vector3(0.0, 1.15, 0.02), body_mat)
 
 	# Central Racing Stripe flush along sloped hood, roof & rear deck
-	var hood_stripe := _add_box(parent, Vector3(0.26, 0.025, 0.82), Vector3(0.0, 0.70, -1.36), accent_mat)
+	var hood_stripe := _add_box(parent, Vector3(0.26, 0.025, 0.82), Vector3(0.0, 0.74, -1.36), accent_mat)
 	hood_stripe.rotation_degrees = Vector3(-7.2, 0.0, 0.0)
 	_add_box(parent, Vector3(0.26, 0.025, 0.90), Vector3(0.0, 1.185, 0.02), accent_mat)
-	_add_box(parent, Vector3(0.26, 0.025, 0.62), Vector3(0.0, 0.798, 1.50), accent_mat)
+	_add_box(parent, Vector3(0.26, 0.025, 0.62), Vector3(0.0, 0.805, 1.50), accent_mat)
 
 	# Carbon Front Splitter, Side Skirts & Rear Diffuser
 	_add_box(parent, Vector3(1.88, 0.06, 0.42), Vector3(0.0, 0.27, -1.96), carbon_mat)
 	for side in [-1.0, 1.0]:
 		var skirt_w := 0.14 if is_drift else 0.09
-		_add_box(parent, Vector3(skirt_w, 0.09, 2.05), Vector3(side * 0.94, 0.28, 0.0), carbon_mat)
-		# Flared widebody fenders for drift coupe
+		_add_box(parent, Vector3(skirt_w, 0.09, 1.62), Vector3(side * 0.94, 0.28, 0.0), carbon_mat)
+		# Clean 3-segment widebody fender arch flares flush along hood slope & clearing tires
 		if is_drift:
-			_add_box(parent, Vector3(0.12, 0.26, 0.92), Vector3(side * 0.98, 0.52, -1.25), accent_mat)
-			_add_box(parent, Vector3(0.14, 0.28, 0.98), Vector3(side * 0.99, 0.54, 1.25), accent_mat)
+			_add_fender_arch(parent, side, -1.28, 0.955, 0.725, 0.68, -6.5, accent_mat)
+			_add_fender_arch(parent, side,  1.28, 0.975, 0.785, 0.78,  0.0, accent_mat)
 	_add_box(parent, Vector3(1.68, 0.16, 0.24), Vector3(0.0, 0.33, 1.98), carbon_mat)
 
 	# Front Grille Intake
-	_add_box(parent, Vector3(1.18, 0.18, 0.08), Vector3(0.0, 0.42, -2.07), carbon_mat)
+	_add_box(parent, Vector3(1.18, 0.18, 0.08), Vector3(0.0, 0.40, -2.07), carbon_mat)
 
-	# Twin Sleek Headlights
+	# Twin Sleek Headlights (flush inside front nose, never poking above hood in Hood Cam)
 	for side in [-1.0, 1.0]:
-		var hl := _add_box(parent, Vector3(0.36, 0.10, 0.12), Vector3(side * 0.62, 0.56, -1.98), headlight_mat)
+		var hl := _add_box(parent, Vector3(0.36, 0.08, 0.10), Vector3(side * 0.62, 0.48, -1.98), headlight_mat)
 		hl.rotation_degrees = Vector3(0.0, side * 14.0, 0.0)
 
 	# Full-Width Glowing LED Tail/Brake Light Bar
@@ -205,22 +205,42 @@ static func _build_formula_body(
 	]
 	_add_loft(parent, mono_stations, body_mat, "FormulaMonocoque")
 
-	# Sidepods left & right
+	# Shortened & tapered sidepods ending cleanly at z = 0.82 (11cm ahead of rear tires z = 0.93)
 	for side in [-1.0, 1.0]:
-		_add_box(parent, Vector3(0.46, 0.36, 1.75), Vector3(side * 0.64, 0.46, 0.35), body_mat)
-		_add_box(parent, Vector3(0.42, 0.07, 1.65), Vector3(side * 0.64, 0.65, 0.35), accent_mat)
-		_add_box(parent, Vector3(0.36, 0.24, 0.08), Vector3(side * 0.64, 0.46, -0.53), carbon_mat)
+		_add_box(parent, Vector3(0.42, 0.34, 1.34), Vector3(side * 0.63, 0.46, 0.15), body_mat)
+		_add_box(parent, Vector3(0.38, 0.06, 1.24), Vector3(side * 0.63, 0.64, 0.15), accent_mat)
+		_add_box(parent, Vector3(0.34, 0.22, 0.08), Vector3(side * 0.63, 0.46, -0.53), carbon_mat)
 
-	# Low Floor & Wide Front Aero Wing
-	_add_box(parent, Vector3(1.86, 0.05, 2.95), Vector3(0.0, 0.24, 0.15), carbon_mat)
+	# Low Floor Plank (narrowed to clear all 4 tires cleanly) & Wide Front Aero Wing
+	_add_box(parent, Vector3(1.26, 0.05, 1.92), Vector3(0.0, 0.24, 0.02), carbon_mat)
 	_add_box(parent, Vector3(1.94, 0.06, 0.34), Vector3(0.0, 0.30, -2.10), accent_mat)
 	for side in [-1.0, 1.0]:
 		_add_box(parent, Vector3(0.05, 0.22, 0.38), Vector3(side * 0.96, 0.38, -2.10), body_mat)
 
-	# Cockpit Canopy + Roll Hoop + Racing Stripe
-	_add_box(parent, Vector3(0.56, 0.26, 0.92), Vector3(0.0, 0.86, -0.10), glass_mat)
-	_add_box(parent, Vector3(0.24, 0.34, 0.46), Vector3(0.0, 0.98, 0.48), accent_mat)
-	_add_box(parent, Vector3(0.18, 0.03, 1.60), Vector3(0.0, 0.59, -1.28), accent_mat)
+	# Open Cockpit Recess, Driver Helmet, Sleek Carbon Halo Hoop & Roll Airbox
+	_add_box(parent, Vector3(0.52, 0.14, 0.88), Vector3(0.0, 0.78, -0.08), carbon_mat)
+	var helmet := MeshInstance3D.new()
+	var hsph := SphereMesh.new()
+	hsph.radius = 0.17
+	hsph.height = 0.34
+	hsph.radial_segments = 14
+	hsph.rings = 10
+	helmet.mesh = hsph
+	helmet.material_override = accent_mat
+	helmet.position = Vector3(0.0, 0.94, 0.05)
+	parent.add_child(helmet)
+	_add_box(parent, Vector3(0.26, 0.08, 0.14), Vector3(0.0, 0.96, -0.07), glass_mat)
+
+	# F1 Safety Halo Hoop (central front pillar + twin side rails into roll hoop)
+	var halo_pillar := _add_box(parent, Vector3(0.05, 0.24, 0.06), Vector3(0.0, 0.94, -0.44), carbon_mat)
+	halo_pillar.rotation_degrees = Vector3(24.0, 0.0, 0.0)
+	_add_box(parent, Vector3(0.48, 0.05, 0.06), Vector3(0.0, 1.05, -0.36), carbon_mat)
+	for side in [-1.0, 1.0]:
+		var rail := _add_box(parent, Vector3(0.05, 0.05, 0.78), Vector3(side * 0.25, 1.03, 0.02), carbon_mat)
+		rail.rotation_degrees = Vector3(-4.0, side * -6.0, 0.0)
+
+	_add_box(parent, Vector3(0.24, 0.36, 0.46), Vector3(0.0, 0.98, 0.50), accent_mat)
+	_add_box(parent, Vector3(0.18, 0.03, 1.48), Vector3(0.0, 0.59, -1.24), accent_mat)
 
 	# Dual Front LED Strips & Rear Rain/Brake Light
 	for side in [-1.0, 1.0]:
@@ -267,19 +287,20 @@ static func _build_rally_body(
 	_add_box(parent, Vector3(0.38, 0.14, 0.46), Vector3(0.0, 1.41, -0.05), accent_mat)
 	_add_box(parent, Vector3(0.32, 0.03, 0.95), Vector3(0.0, 0.81, -1.30), accent_mat)
 
-	# Heavy Skidplate, Mudflaps & Wide Fender Flares
+	# Heavy Skidplate, Mudflaps & Clean 3-Segment Wide Fender Arch Flares
 	_add_box(parent, Vector3(1.88, 0.10, 0.32), Vector3(0.0, 0.32, -1.86), carbon_mat)
 	for side in [-1.0, 1.0]:
-		_add_box(parent, Vector3(0.14, 0.30, 0.96), Vector3(side * 0.97, 0.56, -1.22), carbon_mat)
-		_add_box(parent, Vector3(0.14, 0.30, 0.96), Vector3(side * 0.97, 0.56, 1.22), carbon_mat)
+		_add_fender_arch(parent, side, -1.28, 0.955, 0.755, 0.68, -6.5, carbon_mat)
+		_add_fender_arch(parent, side,  1.28, 0.975, 0.800, 0.78,  0.0, carbon_mat)
 		# Red/accent mudflaps behind rear wheels
 		_add_box(parent, Vector3(0.34, 0.24, 0.04), Vector3(side * 0.82, 0.30, 1.78), accent_mat)
 
-	# Quad Rally Nose Spotlights + Main Headlights
+	# Recessed Quad Rally Nose Spotlights in Carbon Light Pod + Main Headlights
+	_add_box(parent, Vector3(0.76, 0.17, 0.10), Vector3(0.0, 0.62, -1.87), carbon_mat)
 	for side in [-1.0, 1.0]:
-		_add_box(parent, Vector3(0.34, 0.14, 0.10), Vector3(side * 0.64, 0.68, -1.88), headlight_mat)
-		_add_box(parent, Vector3(0.18, 0.16, 0.14), Vector3(side * 0.26, 0.66, -1.94), headlight_mat)
-		_add_box(parent, Vector3(0.18, 0.16, 0.14), Vector3(side * 0.10, 0.66, -1.96), headlight_mat)
+		_add_box(parent, Vector3(0.32, 0.12, 0.08), Vector3(side * 0.64, 0.64, -1.86), headlight_mat)
+		_add_box(parent, Vector3(0.12, 0.11, 0.06), Vector3(side * 0.25, 0.62, -1.91), headlight_mat)
+		_add_box(parent, Vector3(0.12, 0.11, 0.06), Vector3(side * 0.09, 0.62, -1.91), headlight_mat)
 
 	# Rear Rally Tail Lights & Boxy Roof Wing
 	for side in [-1.0, 1.0]:
@@ -370,6 +391,25 @@ static func _add_box(parent: Node3D, sz: Vector3, pos: Vector3, mat: Material) -
 	mi.position = pos
 	parent.add_child(mi)
 	return mi
+
+
+static func _add_fender_arch(
+	parent: Node3D,
+	side: float,
+	wheel_z: float,
+	x_outer: float,
+	top_y: float,
+	brow_len: float,
+	brow_tilt_x: float,
+	mat: Material
+) -> void:
+	# 3-segment fender arch flare: sloped top brow flush with fender line + front/rear lip tabs clearing tire
+	var brow := _add_box(parent, Vector3(0.08, 0.055, brow_len), Vector3(side * x_outer, top_y, wheel_z), mat)
+	brow.rotation_degrees = Vector3(brow_tilt_x, 0.0, 0.0)
+	var tab_dz := maxf(0.39, brow_len * 0.5 + 0.02)
+	var tilt_dy := sin(deg_to_rad(brow_tilt_x)) * tab_dz
+	_add_box(parent, Vector3(0.08, 0.30, 0.075), Vector3(side * x_outer, top_y + tilt_dy - 0.16, wheel_z - tab_dz), mat)
+	_add_box(parent, Vector3(0.08, 0.30, 0.075), Vector3(side * x_outer, top_y - tilt_dy - 0.16, wheel_z + tab_dz), mat)
 
 
 static func _add_loft(parent: Node3D, stations: Array, mat: Material, node_name: String) -> MeshInstance3D:

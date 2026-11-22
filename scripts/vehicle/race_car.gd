@@ -10,6 +10,7 @@ signal boost_pad_hit
 signal gear_changed(new_gear: int)
 
 var car_id: String = "apex_gtr"
+var car_style: String = "gt"
 var car_idx: int = 0
 var livery_idx: int = 0
 var driver_name: String = "PLAYER"
@@ -24,8 +25,12 @@ var nitro_active: bool = false
 var nitro_force: float = 11500.0
 var nitro_charge_mult: float = 1.0
 var downforce_coeff: float = 2.4
+var max_speed_kmh: float = 258.0
 var boost_pad_timer: float = 0.0
 var launch_boost_timer: float = 0.0
+
+var _base_stability_yaw_strength: float = 6.5
+var _base_tcs_max_slip: float = 10.0
 
 # Drift state & scoring
 var is_drifting: bool = false
@@ -79,6 +84,8 @@ func configure(p_car_idx: int, p_livery_idx: int, p_driver_name: String, p_is_pl
 	var livery := CarCatalog.get_livery(livery_idx)
 	var p: Dictionary = spec["physics"]
 	car_id = spec["id"]
+	car_style = str(spec["style"])
+	var is_slide_style := (car_style == "drift" or car_style == "rally")
 
 	# Configure GEVP physics parameters from CarCatalog
 	vehicle_mass = float(p["vehicle_mass"])
@@ -104,16 +111,18 @@ func configure(p_car_idx: int, p_livery_idx: int, p_driver_name: String, p_is_pl
 	countersteer_speed = float(p["countersteer_speed"])
 	steering_speed_decay = float(p["steering_speed_decay"])
 	max_steering_angle = float(p["max_steering_angle"])
-	steering_slip_assist = 0.18
+	steering_slip_assist = 0.38 if is_slide_style else 0.28
 	countersteer_assist = float(p["countersteer_assist"])
 	steering_exponent = 1.35
 
 	var esp_on := true if (not is_player) else bool(GameState.settings.get("stability_assist", true))
 	enable_stability = true
-	stability_yaw_strength = float(p["stability_yaw_strength"]) * (1.0 if esp_on else 0.45)
+	stability_yaw_engage_angle = 0.14 if is_slide_style else 0.10
+	_base_stability_yaw_strength = float(p["stability_yaw_strength"]) * (1.0 if esp_on else 0.45)
+	stability_yaw_strength = _base_stability_yaw_strength
 	stability_yaw_ground_multiplier = float(p["stability_yaw_ground_multiplier"]) * (1.0 if esp_on else 0.45)
-	stability_upright_spring = 1.6
-	stability_upright_damping = 1200.0
+	stability_upright_spring = 4.5
+	stability_upright_damping = 1800.0
 
 	front_spring_length = float(p["spring_length_front"])
 	rear_spring_length = float(p["spring_length_rear"])
@@ -127,10 +136,11 @@ func configure(p_car_idx: int, p_livery_idx: int, p_driver_name: String, p_is_pl
 	front_tire_radius = 0.34
 	rear_tire_radius = 0.35
 	front_tire_width = 255.0
-	rear_tire_width = 275.0
+	rear_tire_width = 305.0 if car_style == "drift" else 275.0
 	contact_patch = 0.22
 	braking_grip_multiplier = 2.0
-	traction_control_max_slip = 10.0
+	_base_tcs_max_slip = 10.0
+	traction_control_max_slip = _base_tcs_max_slip
 
 	var road_cof := float(p["road_cof"])
 	var dirt_cof := float(p["dirt_cof"])
@@ -148,6 +158,7 @@ func configure(p_car_idx: int, p_livery_idx: int, p_driver_name: String, p_is_pl
 	coefficient_of_drag = float(p["coefficient_of_drag"])
 	frontal_area = 2.05
 	downforce_coeff = float(p["downforce_coeff"])
+	max_speed_kmh = float(p.get("max_speed_kmh", 258.0))
 	nitro_force = float(p["nitro_force"])
 	nitro_charge_mult = float(p["nitro_charge_mult"])
 
@@ -197,6 +208,7 @@ func configure(p_car_idx: int, p_livery_idx: int, p_driver_name: String, p_is_pl
 		body_entered.connect(_on_body_entered)
 
 	initialize()
+	max_handbrake_force *= 1.65
 
 
 func _setup_fx() -> void:
@@ -323,6 +335,8 @@ func reset_to_transform(xf: Transform3D) -> void:
 	nitro_active = false
 	boost_pad_timer = 0.0
 	launch_boost_timer = 0.0
+	traction_control_max_slip = _base_tcs_max_slip
+	stability_yaw_strength = _base_stability_yaw_strength
 	_last_skid_valid = [false, false]
 
 
@@ -348,6 +362,31 @@ func _physics_process(delta: float) -> void:
 		_update_visual_fx(delta)
 		return
 
+	# Dynamic drift assist: relax TCS & ESP during handbrake / player controlled drifts (15-35 deg),
+	# while keeping AI corner exits composed and catching high-angle spin-outs cleanly past 32 deg!
+	var drift_relax := handbrake_input > 0.2 or (is_drifting and is_player)
+	if drift_relax:
+		traction_control_max_slip = -1.0
+		if drift_angle_deg < 32.0:
+			stability_yaw_strength = _base_stability_yaw_strength * 0.25
+		else:
+			var catch_t := clampf((drift_angle_deg - 32.0) / 14.0, 0.0, 1.0)
+			stability_yaw_strength = lerpf(_base_stability_yaw_strength * 0.25, _base_stability_yaw_strength * 1.5, catch_t)
+	else:
+		traction_control_max_slip = _base_tcs_max_slip
+		stability_yaw_strength = _base_stability_yaw_strength
+
+	# Break rear traction cleanly on handbrake pull, and sustain controlled RWD power slides on drift cars
+	for rw in [rear_left_wheel, rear_right_wheel]:
+		if rw != null and rw.surface_type != "":
+			var base_cof: float = float(rw.coefficient_of_friction.get(rw.surface_type, 2.5))
+			if handbrake_input > 0.2 and speed > 8.0 and drift_angle_deg < 28.0:
+				rw.current_cof = base_cof * (0.56 if car_style == "drift" else 0.74)
+			elif is_player and is_drifting and car_style == "drift" and throttle_input > 0.30 and absf(steering_input) > 0.20 and drift_angle_deg < 34.0:
+				rw.current_cof = base_cof * 0.74
+			else:
+				rw.current_cof = base_cof
+
 	# Run core GEVP raycast vehicle simulation
 	super._physics_process(delta)
 
@@ -366,10 +405,21 @@ func _physics_process(delta: float) -> void:
 		var df := downforce_coeff * speed * speed
 		apply_central_force(-global_transform.basis.y * df)
 
-	# 2. Anti-flip gentle upright torque if car ever rolls past 65 degrees
-	if global_transform.basis.y.y < 0.42:
+	# 1b. Progressive drift angle limiter (sustains 24-40 deg slides on drift, crisper recovery on AWD GT/Formula)
+	var catch_deg := 36.0 if car_style == "drift" else (26.0 if car_style == "rally" else (21.0 if car_style == "formula" else 22.0))
+	if grounded and speed > 6.0 and drift_angle_deg > catch_deg:
+		var slip_sign := signf(local_velocity.x) # +X lateral vel means tail swung right (car rotating +Y left)
+		var excess := clampf((drift_angle_deg - catch_deg) / 14.0, 0.0, 1.8)
+		var restore_gain := 2.0 if car_style == "drift" else (4.6 if car_style == "rally" else 6.8)
+		var restore_yaw := -slip_sign * vehicle_mass * restore_gain * excess
+		var damp_yaw := -angular_velocity.y * vehicle_mass * 2.8 * excess
+		apply_torque(global_transform.basis.y * (restore_yaw + damp_yaw))
+
+	# 2. Progressive anti-rollover stabilization (keeps all race cars planted on kerbs & walls)
+	if global_transform.basis.y.y < 0.82:
 		var upright_axis := global_transform.basis.y.cross(Vector3.UP)
-		apply_torque(upright_axis * vehicle_mass * 12.0)
+		var severity := clampf((0.82 - global_transform.basis.y.y) / 0.45, 0.0, 1.5)
+		apply_torque(upright_axis * vehicle_mass * (18.0 + 30.0 * severity) - angular_velocity * vehicle_mass * 1.6)
 
 	# 3. Nitro Boost, Boost Pad & Launch Control Thrust
 	var want_nitro := nitro_input and nitro > 2.0 and forward_speed > 2.0 and current_gear >= 0
@@ -385,7 +435,7 @@ func _physics_process(delta: float) -> void:
 
 	if boost_pad_timer > 0.0:
 		boost_pad_timer = maxf(0.0, boost_pad_timer - delta)
-		if grounded:
+		if grounded and brake_input < 0.35:
 			apply_central_force(forward_dir * (nitro_force * 1.15))
 
 	if launch_boost_timer > 0.0:
@@ -393,8 +443,9 @@ func _physics_process(delta: float) -> void:
 		if grounded:
 			apply_central_force(forward_dir * (nitro_force * 0.85))
 
-	# Cap extreme velocity cleanly so physics stays rock-solid
-	var max_v := 86.0 if (nitro_active or boost_pad_timer > 0.0) else 75.0
+	# Per-car top speed cap (+35 km/h bonus on Nitro or Boost Pad)
+	var cap_kmh := max_speed_kmh + (35.0 if (nitro_active or boost_pad_timer > 0.0) else 0.0)
+	var max_v := cap_kmh / 3.6
 	if linear_velocity.length() > max_v:
 		linear_velocity = linear_velocity.normalized() * max_v
 
@@ -410,7 +461,7 @@ func _physics_process(delta: float) -> void:
 	if grounded and speed_kmh > 40.0 and (drift_angle_deg > 10.5 or (handbrake_input > 0.4 and drift_angle_deg > 5.5)):
 		is_drifting = true
 		drift_bank_timer = 0.75
-		var rate := (speed_kmh * 0.75 + drift_angle_deg * 8.0) * delta
+		var rate := (speed_kmh * 0.75 + drift_angle_deg * 8.0) * nitro_charge_mult * delta
 		current_drift_score += rate
 		nitro = minf(100.0, nitro + 21.0 * nitro_charge_mult * delta)
 	else:
@@ -501,7 +552,7 @@ func _on_body_entered(body: Node) -> void:
 		if _spark_particles:
 			_spark_particles.restart()
 			_spark_particles.emitting = true
-		# Cancel unbanked drift on heavy wall slam
-		if intensity > 0.55:
-			current_drift_score *= 0.25
+		# Cancel unbanked drift only on heavy high-speed wall slam (allow light drift wall taps!)
+		if intensity > 0.72:
+			current_drift_score *= 0.35
 		impact_occurred.emit(intensity)

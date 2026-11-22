@@ -10,6 +10,7 @@ const RACE_CAR_SCENE := preload("res://scenes/vehicle/race_car.tscn")
 var track_data: Dictionary = {}
 var spline: TrackSpline
 var start_light_mats: Array[StandardMaterial3D] = []
+var boost_distances: PackedFloat32Array = PackedFloat32Array()
 var is_night: bool = false
 
 var cars: Array[RaceCar] = []
@@ -33,6 +34,7 @@ var _car_has_crossed_start: Dictionary = {} # RaceCar -> bool
 var _car_prev_progress: Dictionary = {}     # RaceCar -> float
 var _ghost_lap_frames: Array = []
 var _ghost_sample_accum: float = 0.0
+var _ghost_lap_start_time: float = 0.0
 var _new_record_this_race: bool = false
 var _best_medal_this_race: String = "none"
 var _finish_delay_timer: float = -1.0
@@ -42,14 +44,13 @@ func _ready() -> void:
 	get_tree().paused = false
 	mode = GameState.mode
 	track_data = TrackCatalog.get_track(GameState.selected_track_idx)
-	total_laps = 3 if mode == "grand_prix" else (1 if mode == "time_trial" else GameState.lap_count)
-	if mode == "time_trial":
-		total_laps = 3 # 3 hotlaps per Time Trial session (or endless hotlap? 3 crisp laps with live ghost!)
+	total_laps = 3 if (mode == "grand_prix" or mode == "time_trial") else GameState.lap_count
 
 	# 1. Build 3D Track World
 	var built := TrackBuilder.build_track(self, track_data)
 	spline = built["spline"]
 	start_light_mats = built["start_lights"]
+	boost_distances = built["boost_distances"]
 	is_night = bool(built["is_night"])
 
 	# Connect Boost Pad triggers
@@ -151,7 +152,7 @@ func _spawn_grid() -> void:
 			var drv := AIDriver.new()
 			drv.name = "AI_" + c.driver_name
 			c.add_child(drv)
-			drv.setup(c, spline, cars, player_car, rivals[r_idx], GameState.difficulty)
+			drv.setup(c, spline, cars, player_car, rivals[r_idx], GameState.difficulty, boost_distances)
 			r_idx += 1
 
 	# Spawn Time Trial Ghost Car if saved best lap exists
@@ -184,6 +185,7 @@ func _instantiate_car(car_idx: int, livery_idx: int, drv_name: String, is_p: boo
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause_game") and race_state != "finished":
+		get_viewport().set_input_as_handled()
 		_toggle_pause()
 
 
@@ -238,8 +240,11 @@ func _process_countdown(delta: float) -> void:
 		else:
 			hud.show_banner(GameState.t("hud_go"), Color(0.15, 1.0, 0.45), 1.4)
 		if ghost_car != null:
-			ghost_car.start_lap()
+			# Keep ghost parked at start line until player crosses dist = 0.0 on Lap 1
+			ghost_car.park_at_start()
 		_ghost_lap_frames.clear()
+		_ghost_sample_accum = 0.0
+		_ghost_lap_start_time = 0.0
 
 
 func _update_start_lights(lit_count: int, is_green: bool, show_hud: bool) -> void:
@@ -247,17 +252,17 @@ func _update_start_lights(lit_count: int, is_green: bool, show_hud: bool) -> voi
 	for i in range(start_light_mats.size()):
 		var mat := start_light_mats[i]
 		if is_green:
-			mat.albedo_color = Color(0.15, 0.96, 0.36)
-			mat.emission = Color(0.12, 1.0, 0.35)
-			mat.emission_energy_multiplier = 4.0
+			mat.albedo_color = Color(0.05, 0.92, 0.24)
+			mat.emission = Color(0.06, 1.0, 0.28)
+			mat.emission_energy_multiplier = 2.2
 		elif i < lit_count:
-			mat.albedo_color = Color(1.0, 0.14, 0.14)
-			mat.emission = Color(1.0, 0.12, 0.12)
-			mat.emission_energy_multiplier = 3.8
+			mat.albedo_color = Color(0.95, 0.02, 0.02)
+			mat.emission = Color(1.0, 0.02, 0.02)
+			mat.emission_energy_multiplier = 2.0
 		else:
-			mat.albedo_color = Color(0.18, 0.05, 0.05)
-			mat.emission = Color(0.05, 0.01, 0.01)
-			mat.emission_energy_multiplier = 0.2
+			mat.albedo_color = Color(0.14, 0.02, 0.02)
+			mat.emission = Color(0.03, 0.0, 0.0)
+			mat.emission_energy_multiplier = 0.15
 
 
 func _update_race_progress(delta: float) -> void:
@@ -279,6 +284,16 @@ func _update_race_progress(delta: float) -> void:
 				_car_has_crossed_start[car] = true
 				car.next_checkpoint = 0
 				car.total_race_progress = p_val
+				if car.is_player:
+					_ghost_lap_frames.clear()
+					_ghost_sample_accum = 0.10
+					if mode == "time_trial":
+						car.current_lap_time = 0.0
+						_ghost_lap_start_time = 0.0
+						if ghost_car != null:
+							ghost_car.start_lap()
+					else:
+						_ghost_lap_start_time = car.current_lap_time
 			else:
 				car.total_race_progress = p_val - 1.0 if p_val > 0.5 else p_val
 		else:
@@ -292,7 +307,14 @@ func _update_race_progress(delta: float) -> void:
 			if prev_p > 0.80 and p_val < 0.20 and car.next_checkpoint >= 6:
 				_on_car_lap_completed(car)
 
-			car.total_race_progress = float(car.current_lap - 1) + p_val
+			# Bound effective progress against checkpoint index so reversing behind start NEVER boosts rank
+			var effective_p := p_val
+			if car.next_checkpoint == 0 and p_val > 0.50:
+				effective_p = p_val - 1.0
+			var min_p := maxf(-0.25, float(car.next_checkpoint) * 0.125 - 0.18)
+			var max_p := float(car.next_checkpoint + 1) * 0.125 + 0.18
+			effective_p = clampf(effective_p, min_p, max_p)
+			car.total_race_progress = float(car.current_lap - 1) + effective_p
 
 		_car_prev_progress[car] = p_val
 
@@ -332,6 +354,8 @@ func _on_car_lap_completed(car: RaceCar) -> void:
 		if _medal_rank(earned_m) > _medal_rank(_best_medal_this_race):
 			_best_medal_this_race = earned_m
 		_ghost_lap_frames.clear()
+		_ghost_sample_accum = 0.10
+		_ghost_lap_start_time = 0.0
 		if ghost_car != null:
 			# Refresh ghost if we just beat our record!
 			if bool(rec_res["is_new_best"]):
@@ -412,6 +436,15 @@ func _show_final_results() -> void:
 	if is_gp:
 		GameState.record_grand_prix_results(result_rows)
 		has_next_gp = GameState.gp_round < TrackCatalog.get_tracks().size() - 1
+		if not has_next_gp:
+			# Final GP Championship Podium: sort by cumulative total_points descending (tie-break finish_time ascending)
+			result_rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+				var pa := int(a.get("total_points", 0))
+				var pb := int(b.get("total_points", 0))
+				if pa != pb:
+					return pa > pb
+				return float(a.get("finish_time", 0.0)) < float(b.get("finish_time", 0.0))
+			)
 
 	results_screen.show_results({
 		"results": result_rows,
@@ -428,6 +461,8 @@ func _show_final_results() -> void:
 func _record_ghost_frame(delta: float) -> void:
 	if player_car == null or player_car.finished:
 		return
+	if not bool(_car_has_crossed_start.get(player_car, false)):
+		return
 	_ghost_sample_accum += delta
 	if _ghost_sample_accum < 0.10:
 		return
@@ -436,8 +471,9 @@ func _record_ghost_frame(delta: float) -> void:
 		return
 	var p := player_car.global_position
 	var r := player_car.rotation
+	var ghost_t := maxf(0.0, player_car.current_lap_time - _ghost_lap_start_time)
 	_ghost_lap_frames.append([
-		snappedf(player_car.current_lap_time, 0.01),
+		snappedf(ghost_t, 0.01),
 		snappedf(p.x, 0.02), snappedf(p.y, 0.02), snappedf(p.z, 0.02),
 		snappedf(r.x, 0.005), snappedf(r.y, 0.005), snappedf(r.z, 0.005)
 	])

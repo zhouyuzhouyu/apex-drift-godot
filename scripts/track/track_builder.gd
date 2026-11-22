@@ -53,12 +53,13 @@ static func build_track(parent: Node3D, track_data: Dictionary) -> Dictionary:
 	_build_ribbon_mesh(root, spline, -half_road - kerb_w - shoulder_w, -half_road - kerb_w, -0.05, 0.03, shoulder_mat, 1, sh_group, 0.09, "LeftShoulder")
 	_build_ribbon_mesh(root, spline, half_road + kerb_w, half_road + kerb_w + shoulder_w, 0.03, -0.05, shoulder_mat, 1, sh_group, 0.09, "RightShoulder")
 
-	# 5. Outer Slope Skirt (visual embankment blending road down to ground plane)
+	# 5. Outer Embankment Skirt (28m wide, always extending cleanly below BaseWorldPlane y = -12m!)
 	var skirt_mat := StandardMaterial3D.new()
 	skirt_mat.albedo_color = Color(theme["shoulder_color"]).darkened(0.26)
 	skirt_mat.roughness = 0.95
-	_build_ribbon_mesh(root, spline, -half_road - kerb_w - shoulder_w - 18.0, -half_road - kerb_w - shoulder_w, -16.0, -0.05, skirt_mat, 0, "", 0.04, "LeftSkirt")
-	_build_ribbon_mesh(root, spline, half_road + kerb_w + shoulder_w, half_road + kerb_w + shoulder_w + 18.0, -0.05, -16.0, skirt_mat, 0, "", 0.04, "RightSkirt")
+	var outer_sh := half_road + kerb_w + shoulder_w
+	_build_embankment_skirt(root, spline, -outer_sh, -outer_sh - 28.0, -0.05, true, skirt_mat, "LeftSkirt")
+	_build_embankment_skirt(root, spline, outer_sh, outer_sh + 28.0, -0.05, false, skirt_mat, "RightSkirt")
 
 	# 6. Continuous Smooth Guardrail Barriers (Layer 2, low friction so cars glide instead of snagging!)
 	var barrier_mat := StandardMaterial3D.new()
@@ -79,7 +80,7 @@ static func build_track(parent: Node3D, track_data: Dictionary) -> Dictionary:
 	var start_lights := _build_start_gantry(root, spline, half_road, theme)
 
 	# 9. Boost Pads along track
-	var boost_areas := _build_boost_pads(root, spline, track_data.get("boost_fractions", []))
+	var boost_res := _build_boost_pads(root, spline, track_data.get("boost_fractions", []))
 
 	# 10. Corner Warning Chevron Signs on sharp bends
 	_build_corner_chevrons(root, spline, barrier_offset + 1.2, bool(theme["is_night"]))
@@ -97,7 +98,8 @@ static func build_track(parent: Node3D, track_data: Dictionary) -> Dictionary:
 		"root": root,
 		"spline": spline,
 		"start_lights": start_lights,
-		"boost_areas": boost_areas,
+		"boost_areas": boost_res["areas"],
+		"boost_distances": boost_res["distances"],
 		"checkpoints": checkpoints,
 		"is_night": bool(theme["is_night"])
 	}
@@ -208,6 +210,60 @@ static func _build_ribbon_mesh(
 		col.shape = mesh.create_trimesh_shape()
 		body.add_child(col)
 		root.add_child(body)
+
+
+static func _build_embankment_skirt(
+	root: Node3D,
+	spline: TrackSpline,
+	lat_inner: float,
+	lat_outer: float,
+	y_inner: float,
+	is_left: bool,
+	mat: Material,
+	node_name: String
+) -> void:
+	# Builds a continuous sloped embankment skirt whose outer bottom edge always reaches
+	# minf(spline_y - 16.0, -13.5), connecting elevated mountain tracks cleanly into BaseWorldPlane (-12m).
+	var n := spline.sample_count()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+
+	var v_accum := 0.0
+	for i in range(n):
+		var nxt := (i + 1) % n
+		var seg_len := spline.points[i].distance_to(spline.points[nxt])
+		var v0 := v_accum * 0.04
+		var v1 := (v_accum + seg_len) * 0.04
+		v_accum += seg_len
+
+		var p0_in := spline.points[i] + spline.rights[i] * lat_inner + spline.ups[i] * y_inner
+		var p1_in := spline.points[nxt] + spline.rights[nxt] * lat_inner + spline.ups[nxt] * y_inner
+
+		var p0_out := spline.points[i] + spline.rights[i] * lat_outer
+		p0_out.y = minf(spline.points[i].y - 16.0, -13.5)
+		var p1_out := spline.points[nxt] + spline.rights[nxt] * lat_outer
+		p1_out.y = minf(spline.points[nxt].y - 16.0, -13.5)
+
+		var p0l := p0_out if is_left else p0_in
+		var p0r := p0_in if is_left else p0_out
+		var p1l := p1_out if is_left else p1_in
+		var p1r := p1_in if is_left else p1_out
+
+		st.set_uv(Vector2(0.0, v0)); st.add_vertex(p0l)
+		st.set_uv(Vector2(0.0, v1)); st.add_vertex(p1l)
+		st.set_uv(Vector2(1.0, v1)); st.add_vertex(p1r)
+
+		st.set_uv(Vector2(0.0, v0)); st.add_vertex(p0l)
+		st.set_uv(Vector2(1.0, v1)); st.add_vertex(p1r)
+		st.set_uv(Vector2(1.0, v0)); st.add_vertex(p0r)
+
+	st.generate_normals()
+	var mi := MeshInstance3D.new()
+	mi.name = node_name
+	mi.mesh = st.commit()
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(mi)
 
 
 static func _build_guardrail_wall(
@@ -397,6 +453,19 @@ static func _build_start_gantry(root: Node3D, spline: TrackSpline, half_road: fl
 	accent_strip.position = Vector3(0.0, h + 0.62, 0.0)
 	gantry.add_child(accent_strip)
 
+	# Dark rectangular F1 light-pod housing behind the 5 gantry bulbs for crisp contrast
+	var pod_mat := StandardMaterial3D.new()
+	pod_mat.albedo_color = Color(0.04, 0.05, 0.07)
+	pod_mat.roughness = 0.72
+	pod_mat.metallic = 0.20
+	var light_pod := MeshInstance3D.new()
+	var lp_box := BoxMesh.new()
+	lp_box.size = Vector3(7.6, 1.05, 0.44)
+	light_pod.mesh = lp_box
+	light_pod.material_override = pod_mat
+	light_pod.position = Vector3(0.0, h - 0.12, 0.62)
+	gantry.add_child(light_pod)
+
 	# 5 F1 Starting Lights mounted on front (+Z face toward grid behind start line!)
 	var light_mats: Array[StandardMaterial3D] = []
 	for i in range(5):
@@ -408,21 +477,22 @@ static func _build_start_gantry(root: Node3D, spline: TrackSpline, half_road: fl
 		sph.radial_segments = 12
 		sph.rings = 8
 		var lmat := StandardMaterial3D.new()
-		lmat.albedo_color = Color(0.18, 0.05, 0.05)
+		lmat.albedo_color = Color(0.14, 0.02, 0.02)
 		lmat.emission_enabled = true
-		lmat.emission = Color(0.05, 0.01, 0.01)
-		lmat.emission_energy_multiplier = 0.2
+		lmat.emission = Color(0.03, 0.0, 0.0)
+		lmat.emission_energy_multiplier = 0.15
 		bulb.mesh = sph
 		bulb.material_override = lmat
-		bulb.position = Vector3(lx, h - 0.12, 0.78)
+		bulb.position = Vector3(lx, h - 0.12, 0.84)
 		gantry.add_child(bulb)
 		light_mats.append(lmat)
 
 	return light_mats
 
 
-static func _build_boost_pads(root: Node3D, spline: TrackSpline, fractions: Array) -> Array[Area3D]:
+static func _build_boost_pads(root: Node3D, spline: TrackSpline, fractions: Array) -> Dictionary:
 	var areas: Array[Area3D] = []
+	var distances := PackedFloat32Array()
 	var pad_mat := StandardMaterial3D.new()
 	pad_mat.albedo_texture = TextureFactory.make_boost_pad_texture()
 	pad_mat.emission_enabled = true
@@ -433,6 +503,7 @@ static func _build_boost_pads(root: Node3D, spline: TrackSpline, fractions: Arra
 	for idx in range(fractions.size()):
 		var frac := float(fractions[idx])
 		var dist := frac * spline.total_length
+		distances.append(dist)
 		var xf := spline.get_transform_at_distance(dist, 0.0, 0.06)
 
 		var pad := Node3D.new()
@@ -442,7 +513,7 @@ static func _build_boost_pads(root: Node3D, spline: TrackSpline, fractions: Arra
 
 		var mesh_inst := MeshInstance3D.new()
 		var pm := PlaneMesh.new()
-		pm.size = Vector2(4.2, 9.5)
+		pm.size = Vector2(6.0, 11.0)
 		mesh_inst.mesh = pm
 		mesh_inst.material_override = pad_mat
 		mesh_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -452,17 +523,18 @@ static func _build_boost_pads(root: Node3D, spline: TrackSpline, fractions: Arra
 		area.name = "BoostTrigger_%d" % idx
 		area.collision_layer = 8 # Triggers
 		area.collision_mask = 4  # Vehicles
+		area.monitoring = true
 		area.set_meta("is_boost_pad", true)
 		var cs := CollisionShape3D.new()
 		var box := BoxShape3D.new()
-		box.size = Vector3(4.5, 2.2, 9.5)
+		box.size = Vector3(6.4, 2.6, 11.0)
 		cs.shape = box
-		cs.position = Vector3(0.0, 1.0, 0.0)
+		cs.position = Vector3(0.0, 1.2, 0.0)
 		area.add_child(cs)
 		pad.add_child(area)
 		areas.append(area)
 
-	return areas
+	return {"areas": areas, "distances": distances}
 
 
 static func _build_corner_chevrons(root: Node3D, spline: TrackSpline, offset: float, is_night: bool) -> void:
@@ -562,6 +634,15 @@ static func _build_grandstands(root: Node3D, spline: TrackSpline, offset: float,
 		canopy.position = Vector3(4.2, 6.4, 0.0)
 		stand.add_child(canopy)
 
+		# Solid concrete foundation plinth extending down into the embankment skirt
+		var plinth := MeshInstance3D.new()
+		var pl_box := BoxMesh.new()
+		pl_box.size = Vector3(7.8, 12.0, 28.4)
+		plinth.mesh = pl_box
+		plinth.material_override = concrete
+		plinth.position = Vector3(4.2, -6.0, 0.0)
+		stand.add_child(plinth)
+
 
 static func _build_scenery(root: Node3D, spline: TrackSpline, barrier_offset: float, theme: Dictionary) -> void:
 	var style: String = str(theme["tree_style"])
@@ -569,11 +650,11 @@ static func _build_scenery(root: Node3D, spline: TrackSpline, barrier_offset: fl
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 9001 + style.hash()
 
-	# Shared low-poly meshes for fast GPU rendering
+	# Shared low-poly meshes for fast GPU rendering (extended trunk base anchors deeply into embankment slopes)
 	var trunk_mesh := CylinderMesh.new()
 	trunk_mesh.top_radius = 0.24
-	trunk_mesh.bottom_radius = 0.42
-	trunk_mesh.height = 4.2
+	trunk_mesh.bottom_radius = 0.46
+	trunk_mesh.height = 6.2
 	trunk_mesh.radial_segments = 6
 
 	var trunk_mat := StandardMaterial3D.new()
@@ -619,6 +700,8 @@ static func _build_scenery(root: Node3D, spline: TrackSpline, barrier_offset: fl
 	neon_pink.emission_energy_multiplier = 2.0
 
 	# Place scenery props along track outside barriers (skip near grandstands)
+	var outer_shoulder := barrier_offset + 0.35
+	var skirt_width := 28.0
 	var step := 6
 	for i in range(0, n, step):
 		var dist := spline.cum_lengths[i]
@@ -627,22 +710,35 @@ static func _build_scenery(root: Node3D, spline: TrackSpline, barrier_offset: fl
 		for side: float in [-1.0, 1.0]:
 			if rng.randf() > 0.68:
 				continue
-			var lat: float = side * (barrier_offset + rng.randf_range(5.5, 22.0))
+			var min_extra := 7.8 if style != "neon_towers" else 8.5
+			var max_extra := 19.5 if style == "palm_cypress" else 23.5
+			var lat: float = side * (barrier_offset + rng.randf_range(min_extra, max_extra))
 			var candidate: Vector3 = spline.points[i] + spline.rights[i] * lat
 			# Ensure prop doesn't encroach on another part of the circuit
 			var nearest := spline.get_closest_index(candidate, i)
-			if spline.points[nearest].distance_to(candidate) < barrier_offset + 3.2:
+			if spline.points[nearest].distance_to(candidate) < barrier_offset + 6.8:
 				continue
 
+			# Exact elevation matching the 28m embankment skirt clamped at BaseWorldPlane (y = -12.0)
+			var abs_lat := absf(lat)
+			var inner_pt := spline.points[i] + spline.rights[i] * (side * outer_shoulder) + spline.ups[i] * (-0.05)
+			var outer_y := minf(spline.points[i].y - 16.0, -13.5)
+			var t_skirt := clampf((abs_lat - outer_shoulder) / skirt_width, 0.0, 1.0)
+			var slope_y := lerpf(inner_pt.y, outer_y, t_skirt)
+			var world_y := maxf(slope_y, -12.0)
+
 			if style == "neon_towers":
-				var h := rng.randf_range(14.0, 48.0)
+				var h := rng.randf_range(16.0, 48.0)
 				var w := rng.randf_range(7.0, 14.0)
+				var top_y := world_y + h
+				var bot_y := -13.0
+				var total_h := maxf(top_y - bot_y, 10.0)
 				var tower := MeshInstance3D.new()
 				var tb := BoxMesh.new()
-				tb.size = Vector3(w, h, w)
+				tb.size = Vector3(w, total_h, w)
 				tower.mesh = tb
 				tower.material_override = foliage_mats[i % foliage_mats.size()]
-				tower.position = candidate + Vector3(0.0, h * 0.5 - 6.0, 0.0)
+				tower.position = Vector3(candidate.x, (top_y + bot_y) * 0.5, candidate.z)
 				tower.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				root.add_child(tower)
 
@@ -652,29 +748,67 @@ static func _build_scenery(root: Node3D, spline: TrackSpline, barrier_offset: fl
 				cb.size = Vector3(w + 0.35, 0.85, w + 0.35)
 				crown.mesh = cb
 				crown.material_override = neon_cyan if (i % 12 == 0) else neon_pink
-				crown.position = Vector3(0.0, h * 0.44, 0.0)
+				crown.position = Vector3(0.0, total_h * 0.5 - 1.25, 0.0)
 				tower.add_child(crown)
 			else:
+				# On coastal track, avoid planting trees out on the ocean plane
+				if style == "palm_cypress" and slope_y < -11.4:
+					continue
 				var tree := Node3D.new()
 				var s := rng.randf_range(0.85, 1.55)
-				tree.position = candidate + Vector3(0.0, -0.8, 0.0)
+				tree.position = Vector3(candidate.x, world_y - 0.6, candidate.z)
 				tree.scale = Vector3.ONE * s
 				root.add_child(tree)
 
 				var tr := MeshInstance3D.new()
 				tr.mesh = trunk_mesh
 				tr.material_override = trunk_mat
-				tr.position = Vector3(0.0, 2.0, 0.0)
+				tr.position = Vector3(0.0, 1.1, 0.0)
 				tr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				tree.add_child(tr)
 
-				var top := MeshInstance3D.new()
-				var is_cone := (style == "palm_cypress" and rng.randf() < 0.55) or (style == "sakura" and rng.randf() < 0.30)
-				top.mesh = cone_mesh if is_cone else foliage_mesh
-				top.material_override = foliage_mats[rng.randi() % foliage_mats.size()]
-				top.position = Vector3(0.0, 5.2 if is_cone else 4.6, 0.0)
-				top.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-				tree.add_child(top)
+				if style == "sakura":
+					var is_cone := rng.randf() < 0.30
+					var top := MeshInstance3D.new()
+					if is_cone:
+						# Evergreen cypress cones ONLY use green material
+						top.mesh = cone_mesh
+						top.material_override = foliage_mats[2]
+						top.position = Vector3(0.0, 5.2, 0.0)
+						top.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+						tree.add_child(top)
+					else:
+						# Lush multi-puff pink cherry blossom canopy
+						var p_idx := rng.randi() % 2
+						top.mesh = foliage_mesh
+						top.material_override = foliage_mats[p_idx]
+						top.position = Vector3(0.0, 4.6, 0.0)
+						top.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+						tree.add_child(top)
+
+						var puff1 := MeshInstance3D.new()
+						puff1.mesh = foliage_mesh
+						puff1.material_override = foliage_mats[(p_idx + 1) % 2]
+						puff1.position = Vector3(1.32, 3.95, 0.62)
+						puff1.scale = Vector3(0.76, 0.72, 0.76)
+						puff1.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+						tree.add_child(puff1)
+
+						var puff2 := MeshInstance3D.new()
+						puff2.mesh = foliage_mesh
+						puff2.material_override = foliage_mats[p_idx]
+						puff2.position = Vector3(-1.26, 4.10, -0.68)
+						puff2.scale = Vector3(0.70, 0.68, 0.72)
+						puff2.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+						tree.add_child(puff2)
+				else:
+					var top := MeshInstance3D.new()
+					var is_cone := rng.randf() < 0.55
+					top.mesh = cone_mesh if is_cone else foliage_mesh
+					top.material_override = foliage_mats[rng.randi() % foliage_mats.size()]
+					top.position = Vector3(0.0, 5.2 if is_cone else 4.6, 0.0)
+					top.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+					tree.add_child(top)
 
 	# Overhead Neon Light Arches on Neon Midnight Circuit!
 	if bool(theme.get("has_neon_arches", false)):

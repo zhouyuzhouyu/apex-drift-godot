@@ -26,7 +26,9 @@ var _drift_panel: PanelContainer
 var _drift_label: Label
 var _controls_bar: Label
 var _lights_panel: PanelContainer
-var _light_dots: Array[ColorRect] = []
+var _lights_canvas: Control
+var _lights_lit_count: int = 0
+var _lights_is_green: bool = false
 var _gauge_canvas: Control
 var _minimap_canvas: Control
 var _speedlines_canvas: Control
@@ -40,6 +42,23 @@ var _camera_label_text: String = ""
 func _ready() -> void:
 	layer = 10
 	_build_ui()
+	GameState.language_changed.connect(_on_language_changed)
+
+
+func _exit_tree() -> void:
+	if GameState.language_changed.is_connected(_on_language_changed):
+		GameState.language_changed.disconnect(_on_language_changed)
+	for c in [_lights_canvas, _gauge_canvas, _minimap_canvas, _speedlines_canvas]:
+		if c != null and c is _HUDDrawOverlay:
+			(c as _HUDDrawOverlay).draw_cb = Callable()
+
+
+func _on_language_changed(_lang: String) -> void:
+	_refresh_labels()
+	if player_car != null:
+		_refresh_dynamic_texts()
+	if _gauge_canvas != null:
+		_gauge_canvas.queue_redraw()
 
 
 func setup(p_player: RaceCar, p_all_cars: Array[RaceCar], p_spline: TrackSpline, p_track: Dictionary, p_laps: int, p_mode: String) -> void:
@@ -133,26 +152,23 @@ func _build_ui() -> void:
 	_time_delta.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	tr_box.add_child(_time_delta)
 
-	# --- TOP-CENTER: F1 Starting Lights Overlay ---
+	# --- TOP-CENTER: Circular F1 Starting Lights Overlay ---
 	_lights_panel = PanelContainer.new()
 	_lights_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	_lights_panel.offset_left = -175
 	_lights_panel.offset_right = 175
-	_lights_panel.offset_top = 24
+	_lights_panel.offset_top = 22
 	_lights_panel.offset_bottom = 86
-	_lights_panel.add_theme_stylebox_override("panel", UITheme.make_panel_box(Color(0.05, 0.06, 0.09, 0.92), UITheme.BORDER_SUBTLE, 14, 2, 18, 12))
+	_lights_panel.add_theme_stylebox_override("panel", UITheme.make_panel_box(Color(0.04, 0.05, 0.08, 0.92), UITheme.BORDER_SUBTLE, 14, 2, 16, 8))
 	_root.add_child(_lights_panel)
 
-	var lh := HBoxContainer.new()
-	lh.alignment = BoxContainer.ALIGNMENT_CENTER
-	lh.add_theme_constant_override("separation", 18)
-	_lights_panel.add_child(lh)
-	for i in range(5):
-		var dot := ColorRect.new()
-		dot.custom_minimum_size = Vector2(36, 36)
-		dot.color = Color(0.18, 0.06, 0.06)
-		lh.add_child(dot)
-		_light_dots.append(dot)
+	_lights_canvas = _HUDDrawOverlay.new()
+	_lights_canvas.custom_minimum_size = Vector2(310, 48)
+	_lights_canvas.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_lights_canvas.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_lights_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_lights_canvas.draw_cb = _draw_countdown_lights
+	_lights_panel.add_child(_lights_canvas)
 
 	# --- CENTER-UPPER: Event Banner (GO / FINAL LAP / PERFECT START / NEW BEST) ---
 	_banner_label = Label.new()
@@ -220,7 +236,7 @@ func _build_ui() -> void:
 	_gauge_canvas.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_gauge_canvas.offset_left = -295
 	_gauge_canvas.offset_right = -20
-	_gauge_canvas.offset_top = -245
+	_gauge_canvas.offset_top = -262
 	_gauge_canvas.offset_bottom = -22
 	_gauge_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_gauge_canvas.draw_cb = _draw_tachometer
@@ -250,13 +266,34 @@ func _refresh_labels() -> void:
 
 func set_countdown_lights(lit_count: int, is_green: bool, show_panel: bool) -> void:
 	_lights_panel.visible = show_panel
-	for i in range(_light_dots.size()):
-		if is_green:
-			_light_dots[i].color = Color(0.12, 0.96, 0.36)
-		elif i < lit_count:
-			_light_dots[i].color = Color(1.0, 0.16, 0.16)
+	_lights_lit_count = lit_count
+	_lights_is_green = is_green
+	if _lights_canvas != null:
+		_lights_canvas.queue_redraw()
+
+
+func _draw_countdown_lights(ctrl: Control) -> void:
+	var sz := ctrl.size
+	var cy := sz.y * 0.5
+	var spacing := minf(58.0, (sz.x - 40.0) / 4.0)
+	var start_x := sz.x * 0.5 - spacing * 2.0
+	for i in range(5):
+		var c := Vector2(start_x + float(i) * spacing, cy)
+		var lit := _lights_is_green or i < _lights_lit_count
+		# Metallic outer bezel ring + recessed housing
+		ctrl.draw_circle(c, 20.0, Color(0.12, 0.14, 0.20, 0.98))
+		ctrl.draw_arc(c, 20.0, 0.0, TAU, 32, Color(0.32, 0.38, 0.50, 0.85), 1.8, true)
+		ctrl.draw_circle(c, 16.5, Color(0.05, 0.04, 0.06, 1.0))
+		if lit:
+			var main_col := Color(0.10, 0.96, 0.36) if _lights_is_green else Color(0.98, 0.06, 0.08)
+			var halo_col := Color(main_col.r, main_col.g, main_col.b, 0.26)
+			ctrl.draw_circle(c, 22.5, halo_col)
+			ctrl.draw_circle(c, 15.0, main_col)
+			# Crisp top-left lens specular highlight
+			ctrl.draw_circle(c + Vector2(-4.5, -4.5), 4.2, Color(1.0, 0.96, 0.96, 0.52))
 		else:
-			_light_dots[i].color = Color(0.18, 0.06, 0.06)
+			ctrl.draw_circle(c, 15.0, Color(0.16, 0.04, 0.05, 1.0))
+			ctrl.draw_arc(c, 15.0, 0.0, TAU, 28, Color(0.28, 0.09, 0.11, 0.6), 1.2, true)
 
 
 func show_banner(text: String, col: Color = Color.WHITE, duration: float = 2.0) -> void:
@@ -291,9 +328,22 @@ func update_hud(delta: float, race_time: float) -> void:
 	else:
 		_wrong_way_panel.visible = false
 
+	_refresh_dynamic_texts()
+
+	_controls_bar.visible = bool(GameState.settings.get("show_controls", true))
+
+	# Trigger custom canvas redraws
+	_gauge_canvas.queue_redraw()
+	_minimap_canvas.queue_redraw()
+	_speedlines_canvas.queue_redraw()
+
+
+func _refresh_dynamic_texts() -> void:
+	if player_car == null:
+		return
 	# Position & Lap display
 	if mode == "time_trial" or mode == "free_roam":
-		_pos_value.text = "SOLO"
+		_pos_value.text = GameState.t("hud_solo")
 	else:
 		_pos_value.text = "%d / %d" % [player_car.race_rank, maxi(1, all_cars.size())]
 
@@ -302,28 +352,21 @@ func update_hud(delta: float, race_time: float) -> void:
 	else:
 		_lap_value.text = "%s %d / %d" % [GameState.t("hud_lap"), mini(player_car.current_lap, total_laps), total_laps]
 
-	# Timers
-	_time_cur.text = "%s  %s" % [GameState.t("hud_time"), GameState.format_time(player_car.current_lap_time)]
+	# Timers (00:00.00 for active lap & total race timer; --:--.-- for unrecorded best)
+	_time_cur.text = "%s  %s" % [GameState.t("hud_time"), GameState.format_time(player_car.current_lap_time, true)]
 	var saved_best := float(GameState.get_track_record(str(track_data.get("id", ""))).get("best_lap", 0.0))
 	var display_best := player_car.best_lap_time
 	if display_best <= 0.0 or (saved_best > 0.0 and saved_best < display_best):
 		display_best = saved_best
-	_time_best.text = "%s  %s" % [GameState.t("hud_best"), GameState.format_time(display_best)]
-	_time_delta.text = "%s  %s" % [GameState.t("hud_total"), GameState.format_time(race_time)]
+	_time_best.text = "%s  %s" % [GameState.t("hud_best"), GameState.format_time(display_best, false)]
+	_time_delta.text = "%s  %s" % [GameState.t("hud_total"), GameState.format_time(_elapsed_race_time, true)]
 
-	# Drift Combo Popup
-	if player_car.current_drift_score >= 15.0:
+	# Drift Combo Popup (trigger cleanly at >= 5 pts or during active drift)
+	if player_car.current_drift_score >= 5.0 or player_car.is_drifting:
 		_drift_panel.visible = true
 		_drift_label.text = "%s  +%d" % [GameState.t("hud_drift"), int(round(player_car.current_drift_score))]
 	else:
 		_drift_panel.visible = false
-
-	_controls_bar.visible = bool(GameState.settings.get("show_controls", true))
-
-	# Trigger custom canvas redraws
-	_gauge_canvas.queue_redraw()
-	_minimap_canvas.queue_redraw()
-	_speedlines_canvas.queue_redraw()
 
 
 func _draw_minimap(ctrl: Control) -> void:
@@ -370,45 +413,55 @@ func _draw_tachometer(ctrl: Control) -> void:
 		return
 	var font := UITheme.get_font()
 	var sz := ctrl.size
-	var center := Vector2(sz.x * 0.56, sz.y * 0.50)
-	var radius := 84.0
+	var center := Vector2(sz.x * 0.54, 98.0)
+	var radius := 78.0
 
 	# Backing dial
-	ctrl.draw_circle(center, radius + 12.0, Color(0.04, 0.06, 0.11, 0.84))
-	ctrl.draw_arc(center, radius + 12.0, 0.0, TAU, 48, UITheme.BORDER_SUBTLE, 1.6, true)
+	ctrl.draw_circle(center, radius + 11.0, Color(0.04, 0.06, 0.11, 0.86))
+	ctrl.draw_arc(center, radius + 11.0, 0.0, TAU, 48, UITheme.BORDER_SUBTLE, 1.6, true)
 
-	# RPM Arc (from 135° to 405° -> 270° sweep)
+	# Symmetrical 270 deg RPM Arc (135 deg to 405 deg)
 	var start_ang := deg_to_rad(135.0)
-	var sweep := deg_to_rad(250.0)
+	var sweep := deg_to_rad(270.0)
 	var rpm_ratio := clampf(player_car.motor_rpm / maxf(player_car.max_rpm, 1000.0), 0.0, 1.08)
 
 	# Track background arc
-	ctrl.draw_arc(center, radius, start_ang, start_ang + sweep, 40, Color(0.16, 0.20, 0.30, 0.9), 11.0, true)
+	ctrl.draw_arc(center, radius, start_ang, start_ang + sweep, 44, Color(0.16, 0.20, 0.30, 0.9), 10.5, true)
 	# Redline zone marker (82%..100%)
-	ctrl.draw_arc(center, radius, start_ang + sweep * 0.82, start_ang + sweep, 14, Color(0.65, 0.10, 0.16, 0.7), 11.0, true)
+	ctrl.draw_arc(center, radius, start_ang + sweep * 0.82, start_ang + sweep, 14, Color(0.65, 0.10, 0.16, 0.72), 10.5, true)
 
-	# Active RPM arc
-	var fill_ang := start_ang + sweep * clampf(rpm_ratio, 0.0, 1.0)
-	var rpm_col := UITheme.ACCENT_CYAN
-	if rpm_ratio > 0.84:
-		rpm_col = UITheme.ACCENT_RED
-	elif rpm_ratio > 0.65:
-		rpm_col = UITheme.ACCENT_GOLD
-	if fill_ang > start_ang + 0.02:
-		ctrl.draw_arc(center, radius, start_ang, fill_ang, 36, rpm_col, 11.0, true)
+	# Active RPM arc in 3 progressive clipped segments (0..65% Cyan -> 65..84% Gold -> 84..100% Red)
+	var clamped_rpm := clampf(rpm_ratio, 0.0, 1.0)
+	if clamped_rpm > 0.005:
+		var seg1_end := minf(clamped_rpm, 0.65)
+		ctrl.draw_arc(center, radius, start_ang, start_ang + sweep * seg1_end, 28, UITheme.ACCENT_CYAN, 10.5, true)
+	if clamped_rpm > 0.65:
+		var seg2_end := minf(clamped_rpm, 0.84)
+		ctrl.draw_arc(center, radius, start_ang + sweep * 0.65, start_ang + sweep * seg2_end, 14, UITheme.ACCENT_GOLD, 10.5, true)
+	if clamped_rpm > 0.84:
+		ctrl.draw_arc(center, radius, start_ang + sweep * 0.84, start_ang + sweep * clamped_rpm, 12, UITheme.ACCENT_RED, 10.5, true)
 
-	# Tick marks
+	# Tick marks (9 ticks evenly across 270 deg)
 	for i in range(9):
 		var a := start_ang + sweep * (float(i) / 8.0)
-		var p0 := center + Vector2(cos(a), sin(a)) * (radius - 10.0)
-		var p1 := center + Vector2(cos(a), sin(a)) * (radius + 5.0)
+		var p0 := center + Vector2(cos(a), sin(a)) * (radius - 9.5)
+		var p1 := center + Vector2(cos(a), sin(a)) * (radius + 4.5)
 		var tc := UITheme.ACCENT_RED if i >= 7 else Color(0.75, 0.82, 0.92, 0.8)
 		ctrl.draw_line(p0, p1, tc, 2.0, true)
 
 	# Speed KM/H numeric readout
 	var spd_str := "%d" % int(round(player_car.get_speed_kmh()))
-	ctrl.draw_string(font, center + Vector2(-56.0, 10.0), spd_str, HORIZONTAL_ALIGNMENT_CENTER, 112.0, 42, Color.WHITE)
-	ctrl.draw_string(font, center + Vector2(-42.0, 29.0), "KM/H", HORIZONTAL_ALIGNMENT_CENTER, 84.0, 13, UITheme.TEXT_MUTED)
+	ctrl.draw_string(font, center + Vector2(-54.0, 6.0), spd_str, HORIZONTAL_ALIGNMENT_CENTER, 108.0, 40, Color.WHITE)
+	ctrl.draw_string(font, center + Vector2(-42.0, 23.0), "KM/H", HORIZONTAL_ALIGNMENT_CENTER, 84.0, 12, UITheme.TEXT_MUTED)
+
+	# Sleek Redline Shift-Light LED Dot directly above the Gear Box
+	var shift_pos := center + Vector2(0.0, 32.0)
+	if rpm_ratio > 0.88:
+		var flash := rpm_ratio > 0.94 and fmod(Time.get_ticks_msec() * 0.012, 1.0) < 0.5
+		ctrl.draw_circle(shift_pos, 7.0, Color(1.0, 0.16, 0.24, 0.40))
+		ctrl.draw_circle(shift_pos, 3.8, Color.WHITE if flash else UITheme.ACCENT_RED)
+	else:
+		ctrl.draw_circle(shift_pos, 3.4, Color(0.18, 0.22, 0.32, 0.90))
 
 	# Gear Badge
 	var gear_str := "N"
@@ -417,24 +470,32 @@ func _draw_tachometer(ctrl: Control) -> void:
 	elif player_car.current_gear > 0:
 		gear_str = str(player_car.current_gear)
 
-	var gear_box := Rect2(center + Vector2(-22.0, 38.0), Vector2(44.0, 32.0))
+	var gear_box := Rect2(center + Vector2(-21.0, 40.0), Vector2(42.0, 30.0))
 	ctrl.draw_rect(gear_box, Color(0.11, 0.15, 0.24, 0.96), true)
 	ctrl.draw_rect(gear_box, UITheme.ACCENT_RED if rpm_ratio > 0.88 else UITheme.ACCENT_CYAN, false, 2.0)
-	ctrl.draw_string(font, gear_box.position + Vector2(0.0, 24.0), gear_str, HORIZONTAL_ALIGNMENT_CENTER, 44.0, 22, Color.WHITE)
+	ctrl.draw_string(font, gear_box.position + Vector2(0.0, 23.0), gear_str, HORIZONTAL_ALIGNMENT_CENTER, 42.0, 21, Color.WHITE)
 
 	# Auto/Manual mini pill
 	var trans_txt := GameState.t("hud_auto") if player_car.automatic_transmission else GameState.t("hud_manual")
-	ctrl.draw_string(font, center + Vector2(30.0, 62.0), trans_txt, HORIZONTAL_ALIGNMENT_LEFT, 70.0, 12, UITheme.TEXT_MUTED)
+	ctrl.draw_string(font, center + Vector2(28.0, 61.0), trans_txt, HORIZONTAL_ALIGNMENT_LEFT, 70.0, 12, UITheme.TEXT_MUTED)
 
-	# Nitro Bar along bottom of cluster
-	var nb_rect := Rect2(Vector2(18.0, sz.y - 26.0), Vector2(sz.x - 28.0, 18.0))
-	ctrl.draw_rect(nb_rect, Color(0.06, 0.08, 0.14, 0.92), true)
-	var fill_w := (nb_rect.size.x - 4.0) * clampf(player_car.nitro / 100.0, 0.0, 1.0)
+	# High-Contrast Nitro Header Pill cleanly ABOVE the Nitro bar
+	var bar_x := 18.0
+	var bar_w := sz.x - 28.0
+	var header_rect := Rect2(Vector2(bar_x, sz.y - 42.0), Vector2(bar_w, 18.0))
+	ctrl.draw_rect(header_rect, Color(0.04, 0.06, 0.11, 0.82), true)
+	var nitro_pct := int(round(player_car.nitro))
 	var nitro_col := Color(0.25, 0.96, 1.0) if player_car.nitro_active else Color(0.05, 0.68, 0.98)
+	ctrl.draw_string(font, header_rect.position + Vector2(6.0, 13.5), GameState.t("hud_nitro"), HORIZONTAL_ALIGNMENT_LEFT, 100.0, 12, UITheme.TEXT_PRIMARY)
+	ctrl.draw_string(font, header_rect.position + Vector2(bar_w - 76.0, 13.5), "%d%%" % nitro_pct, HORIZONTAL_ALIGNMENT_RIGHT, 70.0, 12, nitro_col if player_car.nitro_active else UITheme.ACCENT_CYAN)
+
+	# Nitro Fill Bar along bottom of cluster
+	var nb_rect := Rect2(Vector2(bar_x, sz.y - 21.0), Vector2(bar_w, 14.0))
+	ctrl.draw_rect(nb_rect, Color(0.05, 0.07, 0.13, 0.94), true)
+	var fill_w := (nb_rect.size.x - 4.0) * clampf(player_car.nitro / 100.0, 0.0, 1.0)
 	if fill_w > 1.0:
 		ctrl.draw_rect(Rect2(nb_rect.position + Vector2(2.0, 2.0), Vector2(fill_w, nb_rect.size.y - 4.0)), nitro_col, true)
 	ctrl.draw_rect(nb_rect, nitro_col if player_car.nitro_active else UITheme.BORDER_SUBTLE, false, 1.5)
-	ctrl.draw_string(font, nb_rect.position + Vector2(8.0, 14.0), "%s  %d%%" % [GameState.t("hud_nitro"), int(round(player_car.nitro))], HORIZONTAL_ALIGNMENT_LEFT, 120.0, 12, Color.WHITE)
 
 
 func _draw_speed_effect(ctrl: Control) -> void:

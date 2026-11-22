@@ -6,6 +6,10 @@ A complete 3D arcade-simcade racing game built with **Godot 4.4+** (GL Compatibi
 
 ---
 
+## Gameplay Showcase Video / 实机演示视频
+
+> 🎬 **[Watch Gameplay Showcase Video (`docs/videos/apex_drift_showcase.mp4`)](docs/videos/apex_drift_showcase.mp4)** — 11s 24fps H.264 capture showcasing the 3D Showroom, F1 Perfect Launch on Coastal Sunway, Drift & Hood Cam on Sakura Mountain Pass, Neon Midnight Circuit, and Grand Prix Championship Podium.
+
 ## Screenshots / 游戏截图
 
 | 主菜单 3D 旋转车库 · Main Menu Showroom | 滨海日光赛道 · Coastal Sunway |
@@ -15,6 +19,10 @@ A complete 3D arcade-simcade racing game built with **Godot 4.4+** (GL Compatibi
 | 樱花山道 · Sakura Mountain Pass | 霓虹午夜赛道 · Neon Midnight Circuit |
 |---|---|
 | ![Sakura Pass](docs/screenshots/sakura_pass.png) | ![Neon Midnight](docs/screenshots/neon_midnight.png) |
+
+| 车头视角与漂移连击 · Hood Cam & Drift | 大奖赛最终颁奖台 · Grand Prix Podium |
+|---|---|
+| ![Hood Cam](docs/screenshots/hood_cam.png) | ![Grand Prix Podium](docs/screenshots/gp_podium.png) |
 
 ---
 

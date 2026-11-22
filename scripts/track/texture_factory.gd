@@ -6,6 +6,10 @@ extends RefCounted
 static var _cache: Dictionary = {}
 
 
+static func clear_cache() -> void:
+	_cache.clear()
+
+
 static func make_asphalt_texture(base_col: Color, is_night: bool) -> ImageTexture:
 	var key := "asphalt_%s_%s" % [base_col.to_html(false), str(is_night)]
 	if _cache.has(key):
@@ -158,19 +162,34 @@ static func make_chevron_texture(is_night: bool) -> ImageTexture:
 static func make_boost_pad_texture() -> ImageTexture:
 	if _cache.has("boost_pad"):
 		return _cache["boost_pad"]
-	var w := 128
-	var h := 256
+	var w := 256
+	var h := 512
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var base_bg := Color(0.04, 0.10, 0.22, 0.92)
+	var rail_col := Color(0.0, 0.95, 1.0, 1.0)
 	for y in range(h):
+		var v := (float(y) + 0.5) / float(h)
 		for x in range(w):
-			var dx := absf(float(x) - 63.5)
-			var chev := int(float(y) + dx * 1.1) % 64
-			var col := Color(0.04, 0.10, 0.22, 0.92)
-			if x < 8 or x >= w - 8:
-				col = Color(0.0, 0.95, 1.0, 1.0)
-			elif chev < 26 and dx < 52.0:
-				var glow := 1.0 - float(chev) / 26.0
-				col = Color(0.0, 0.85, 1.0).lerp(Color(1.0, 0.92, 0.35), glow * 0.7)
+			var u := (float(x) + 0.5) / float(w)
+			var dx := absf(u - 0.5)
+			var col := base_bg
+
+			# Smooth anti-aliased forward-pointing chevrons (4 cycles along pad length)
+			var phase := fposmod(v * 4.0 + dx * 2.15, 1.0)
+			var chev_in := smoothstep(0.0, 0.045, phase)
+			var chev_out := 1.0 - smoothstep(0.36, 0.43, phase)
+			var horiz_mask := 1.0 - smoothstep(0.36, 0.405, dx)
+			var chev_mask := chev_in * chev_out * horiz_mask
+			if chev_mask > 0.001:
+				var glow := clampf(1.0 - phase / 0.40, 0.0, 1.0)
+				var chev_col := Color(0.0, 0.86, 1.0, 1.0).lerp(Color(1.0, 0.94, 0.38, 1.0), glow * 0.72)
+				col = col.lerp(chev_col, chev_mask)
+
+			# Crisp anti-aliased glowing cyan side rails
+			var rail_mask := smoothstep(0.415, 0.440, dx)
+			if rail_mask > 0.001:
+				col = col.lerp(rail_col, rail_mask)
+
 			img.set_pixel(x, y, col)
 	img.generate_mipmaps()
 	var tex := ImageTexture.create_from_image(img)

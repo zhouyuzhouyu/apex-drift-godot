@@ -16,21 +16,50 @@ var nitro_player: AudioStreamPlayer
 var sfx_pool: Array[AudioStreamPlayer] = []
 var _sfx_idx: int = 0
 var _driving_audio_active: bool = false
+var _is_dummy_audio: bool = false
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_is_dummy_audio = (AudioServer.get_driver_name() == "Dummy")
 	_build_streams()
 	_build_players()
 	apply_volumes()
 	GameState.settings_changed.connect(apply_volumes)
 
 
+func _exit_tree() -> void:
+	if GameState.settings_changed.is_connected(apply_volumes):
+		GameState.settings_changed.disconnect(apply_volumes)
+	for p in [bgm_player, engine_player, engine_sub_player, screech_player, wind_player, nitro_player]:
+		if p != null and is_instance_valid(p):
+			p.stop()
+			p.stream = null
+	for p in sfx_pool:
+		if p != null and is_instance_valid(p):
+			p.stop()
+			p.stream = null
+	sfx_pool.clear()
+	sfx_streams.clear()
+
+
 func _build_streams() -> void:
-	# Load GEVP MIT engine sample if present, otherwise procedural saw/harmonic engine loop
+	# Load GEVP MIT engine sample if present and ensure forward looping; fall back to procedural loop
 	var gevp_wav := load("res://addons/gevp/sounds/4000.wav")
-	if gevp_wav != null:
-		sfx_streams["engine_main"] = gevp_wav
+	if gevp_wav is AudioStreamWAV:
+		var wav: AudioStreamWAV = gevp_wav
+		if wav.loop_mode == AudioStreamWAV.LOOP_DISABLED:
+			if wav.format == AudioStreamWAV.FORMAT_8_BITS or wav.format == AudioStreamWAV.FORMAT_16_BITS:
+				var dup: AudioStreamWAV = wav.duplicate()
+				dup.loop_mode = AudioStreamWAV.LOOP_FORWARD
+				dup.loop_begin = 0
+				var bps := (2 if dup.format == AudioStreamWAV.FORMAT_16_BITS else 1) * (2 if dup.stereo else 1)
+				dup.loop_end = dup.data.size() / maxi(1, bps)
+				sfx_streams["engine_main"] = dup
+			else:
+				sfx_streams["engine_main"] = _make_engine_loop(133.3, 1.2)
+		else:
+			sfx_streams["engine_main"] = wav
 	else:
 		sfx_streams["engine_main"] = _make_engine_loop(133.3, 1.2)
 
@@ -92,12 +121,14 @@ func apply_volumes() -> void:
 		bgm_player.volume_db = -80.0
 	else:
 		bgm_player.volume_db = linear_to_db(music_v * 0.38)
-		if not bgm_player.playing:
+		if not _is_dummy_audio and not bgm_player.playing:
 			bgm_player.play()
 
 
 func start_driving_audio() -> void:
 	_driving_audio_active = true
+	if _is_dummy_audio:
+		return
 	if not engine_player.playing:
 		engine_player.volume_db = -40.0
 		engine_player.play()
@@ -125,7 +156,7 @@ func stop_driving_audio() -> void:
 
 
 func update_driving_audio(rpm: float, max_rpm: float, throttle: float, speed_kmh: float, slip_intensity: float, nitro_active: bool) -> void:
-	if not _driving_audio_active:
+	if not _driving_audio_active or _is_dummy_audio:
 		return
 	var master_v := float(GameState.settings.get("master_volume", 0.85))
 	var sfx_v := float(GameState.settings.get("sfx_volume", 0.90)) * master_v
@@ -136,6 +167,10 @@ func update_driving_audio(rpm: float, max_rpm: float, throttle: float, speed_kmh
 		wind_player.volume_db = -80.0
 		nitro_player.volume_db = -80.0
 		return
+
+	for p in [engine_player, engine_sub_player, screech_player, wind_player, nitro_player]:
+		if not p.playing:
+			p.play()
 
 	var rpm_ratio := clampf(rpm / maxf(max_rpm, 1000.0), 0.10, 1.25)
 	engine_player.pitch_scale = clampf(rpm / 4000.0, 0.35, 2.65)
@@ -160,7 +195,7 @@ func update_driving_audio(rpm: float, max_rpm: float, throttle: float, speed_kmh
 
 
 func play_sfx(name: String, pitch: float = 1.0, volume_scale: float = 1.0) -> void:
-	if not sfx_streams.has(name):
+	if _is_dummy_audio or not sfx_streams.has(name):
 		return
 	var master_v := float(GameState.settings.get("master_volume", 0.85))
 	var sfx_v := float(GameState.settings.get("sfx_volume", 0.90)) * master_v * volume_scale

@@ -100,7 +100,7 @@ func _build_ui() -> void:
 
 func show_results(payload: Dictionary) -> void:
 	visible = true
-	var results: Array = payload.get("results", [])
+	var results: Array = payload.get("results", []).duplicate()
 	var track_data: Dictionary = payload.get("track", {})
 	var is_gp: bool = bool(payload.get("is_gp", false))
 	var gp_round: int = int(payload.get("gp_round", 0))
@@ -108,8 +108,16 @@ func show_results(payload: Dictionary) -> void:
 	var is_new_record: bool = bool(payload.get("is_new_record", false))
 	var medal: String = str(payload.get("medal", "none"))
 	var drift_score: int = int(payload.get("drift_score", 0))
+	var is_final_podium := is_gp and not has_next_gp
 
-	if is_gp and not has_next_gp:
+	if is_final_podium:
+		results.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			var pa := int(a.get("total_points", 0))
+			var pb := int(b.get("total_points", 0))
+			if pa != pb:
+				return pa > pb
+			return float(a.get("finish_time", 0.0)) < float(b.get("finish_time", 0.0))
+		)
 		_title_lbl.text = GameState.t("res_gp_complete")
 	else:
 		_title_lbl.text = GameState.t("res_race_complete")
@@ -154,7 +162,10 @@ func show_results(payload: Dictionary) -> void:
 		var btime := GameState.format_time(float(r.get("best_lap", 0.0)))
 		var pts_txt := ""
 		if is_gp:
-			pts_txt = "+%d (%d)" % [int(r.get("round_points", 0)), int(r.get("total_points", 0))]
+			if is_final_podium:
+				pts_txt = "%d %s (+%d)" % [int(r.get("total_points", 0)), GameState.t("res_pts"), int(r.get("round_points", 0))]
+			else:
+				pts_txt = "+%d (%d)" % [int(r.get("round_points", 0)), int(r.get("total_points", 0))]
 		_add_row(["#%d" % (i + 1), dname, cname, ftime, btime, pts_txt], false, is_p, i == 0)
 
 	_btn_next.visible = is_gp and has_next_gp
@@ -191,7 +202,7 @@ func _add_row(cols: Array[String], is_header: bool, is_player: bool, is_first: b
 
 	var hb := HBoxContainer.new()
 	pc.add_child(hb)
-	var widths := [56, 175, 145, 115, 115, 95]
+	var widths := [56, 165, 140, 108, 108, 122]
 	for idx in range(cols.size()):
 		var lbl := Label.new()
 		lbl.text = cols[idx]

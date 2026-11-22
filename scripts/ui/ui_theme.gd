@@ -17,6 +17,11 @@ static var _cached_theme: Theme = null
 static var _cached_font: SystemFont = null
 
 
+static func clear_cache() -> void:
+	_cached_theme = null
+	_cached_font = null
+
+
 static func get_font() -> Font:
 	if _cached_font != null:
 		return _cached_font
@@ -57,6 +62,17 @@ static func build_theme() -> Theme:
 	th.set_color("font_color", "Button", TEXT_PRIMARY)
 	th.set_color("font_hover_color", "Button", Color.WHITE)
 	th.set_color("font_pressed_color", "Button", ACCENT_CYAN)
+
+	# CheckButtons (clean subtle/cyan toggle styling instead of red Button pressed border)
+	th.set_stylebox("normal", "CheckButton", make_panel_box(BG_CARD, BORDER_SUBTLE, 8, 1, 12, 8))
+	th.set_stylebox("hover", "CheckButton", make_panel_box(BG_CARD_HOVER, ACCENT_CYAN, 8, 1, 12, 8))
+	th.set_stylebox("pressed", "CheckButton", make_panel_box(Color(0.10, 0.19, 0.30, 0.96), ACCENT_CYAN, 8, 2, 12, 8))
+	th.set_stylebox("hover_pressed", "CheckButton", make_panel_box(Color(0.14, 0.24, 0.36, 0.98), ACCENT_CYAN, 8, 2, 12, 8))
+	th.set_stylebox("focus", "CheckButton", make_panel_box(BG_CARD_HOVER, ACCENT_CYAN, 8, 1, 12, 8))
+	th.set_color("font_color", "CheckButton", TEXT_PRIMARY)
+	th.set_color("font_hover_color", "CheckButton", Color.WHITE)
+	th.set_color("font_pressed_color", "CheckButton", Color.WHITE)
+	th.set_color("font_hover_pressed_color", "CheckButton", Color.WHITE)
 
 	# Labels
 	th.set_color("font_color", "Label", TEXT_PRIMARY)

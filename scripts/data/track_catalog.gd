@@ -19,7 +19,7 @@ static func get_tracks() -> Array[Dictionary]:
 			"shoulder_width": 5.5,
 			"bank_strength": 0.14,
 			"default_laps": 3,
-			"medal_times": {"gold": 36.0, "silver": 42.0, "bronze": 50.0},
+			"medal_times": {"gold": 30.2, "silver": 34.7, "bronze": 40.7},
 			"boost_fractions": [0.10, 0.44, 0.78],
 			"control_points": [
 				Vector3(0.0, 0.0, 95.0),
@@ -74,7 +74,7 @@ static func get_tracks() -> Array[Dictionary]:
 			"shoulder_width": 5.0,
 			"bank_strength": 0.16,
 			"default_laps": 3,
-			"medal_times": {"gold": 40.0, "silver": 47.0, "bronze": 56.0},
+			"medal_times": {"gold": 32.5, "silver": 37.0, "bronze": 43.0},
 			"boost_fractions": [0.08, 0.36, 0.69],
 			"control_points": [
 				Vector3(0.0, 0.0, 95.0),
@@ -130,7 +130,7 @@ static func get_tracks() -> Array[Dictionary]:
 			"shoulder_width": 4.8,
 			"bank_strength": 0.15,
 			"default_laps": 3,
-			"medal_times": {"gold": 44.0, "silver": 51.0, "bronze": 60.0},
+			"medal_times": {"gold": 41.2, "silver": 45.7, "bronze": 51.7},
 			"boost_fractions": [0.09, 0.32, 0.57, 0.84],
 			"control_points": [
 				Vector3(0.0, 0.0, 105.0),

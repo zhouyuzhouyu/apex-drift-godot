@@ -87,9 +87,27 @@ func _physics_process(delta: float) -> void:
 		var dist := 6.2 if camera_mode == 0 else 8.4
 		var height := 2.45 if camera_mode == 0 else 3.25
 		var dir := -_smoothed_forward if looking_back else _smoothed_forward
-		var desired_pos := target.global_position - dir * (dist + speed_ratio * 0.75) + Vector3.UP * height
-		global_position = global_position.lerp(desired_pos, clampf(delta * 10.5, 0.0, 1.0))
-		var look_ahead := target.global_position + dir * 10.0 + Vector3.UP * 1.15
+		var right := dir.cross(Vector3.UP)
+		if right.length_squared() < 0.0001:
+			right = Vector3.RIGHT
+		else:
+			right = right.normalized()
+
+		var target_dist := dist + speed_ratio * 0.65 + (0.65 if nitro_boost_fov > 0.0 else 0.0)
+		var cur_rel := global_position - target.global_position
+		var cur_lat := cur_rel.dot(right)
+		var cur_y := cur_rel.y
+		var cur_back := -cur_rel.dot(dir)
+
+		var smooth_lat := lerpf(cur_lat, 0.0, clampf(delta * 10.5, 0.0, 1.0))
+		var smooth_y := lerpf(cur_y, height, clampf(delta * 10.5, 0.0, 1.0))
+		var smooth_back := lerpf(cur_back, target_dist, clampf(delta * 16.0, 0.0, 1.0))
+		var min_back := dist * 0.92
+		var max_back := dist + speed_ratio * 0.65 + (0.85 if nitro_boost_fov > 0.0 else 0.30)
+		smooth_back = clampf(smooth_back, min_back, max_back)
+
+		global_position = target.global_position - dir * smooth_back + right * smooth_lat + Vector3.UP * smooth_y
+		var look_ahead := target.global_position + dir * 10.0 + Vector3.UP * 1.05
 		look_at(look_ahead, Vector3.UP)
 		var base_fov := 64.0 if camera_mode == 0 else 68.0
 		_current_fov = lerpf(_current_fov, base_fov + speed_ratio * 14.0 + nitro_boost_fov, delta * 6.0)

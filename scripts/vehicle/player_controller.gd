@@ -31,6 +31,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("toggle_transmission"):
 		car.automatic_transmission = not car.automatic_transmission
 		GameState.settings["auto_transmission"] = car.automatic_transmission
+		GameState.save_data()
+		GameState.settings_changed.emit()
 		transmission_toggled.emit(car.automatic_transmission)
 		AudioManager.play_sfx("ui_click")
 	elif event.is_action_pressed("shift_up") and not car.automatic_transmission:
@@ -70,7 +72,7 @@ func _physics_process(_delta: float) -> void:
 
 	car.steering_input = clampf(raw_steer, -1.0, 1.0)
 	car.handbrake_input = raw_hb
-	car.clutch_input = raw_hb * 0.7
+	car.clutch_input = 0.0
 	car.nitro_input = raw_nitro
 
 	AudioManager.update_driving_audio(

@@ -24,7 +24,23 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_build_ui()
 	visible = false
-	GameState.language_changed.connect(func(_l): _refresh_texts())
+	GameState.language_changed.connect(_on_language_changed)
+
+
+func _exit_tree() -> void:
+	if GameState.language_changed.is_connected(_on_language_changed):
+		GameState.language_changed.disconnect(_on_language_changed)
+
+
+func _on_language_changed(_lang: String) -> void:
+	_refresh_texts()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if visible and event.is_action_pressed("pause_game"):
+		get_viewport().set_input_as_handled()
+		AudioManager.play_sfx("ui_click")
+		resume_requested.emit()
 
 
 func _build_ui() -> void:

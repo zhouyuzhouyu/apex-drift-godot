@@ -54,7 +54,18 @@ func _ready() -> void:
 	_build_ui()
 	_rebuild_showroom_car()
 	_refresh_all()
-	GameState.language_changed.connect(func(_l): _refresh_all())
+	GameState.language_changed.connect(_on_language_changed)
+
+
+func _exit_tree() -> void:
+	if GameState.language_changed.is_connected(_on_language_changed):
+		GameState.language_changed.disconnect(_on_language_changed)
+	if _track_minimap and _track_minimap is _MenuDrawControl:
+		(_track_minimap as _MenuDrawControl).draw_cb = Callable()
+
+
+func _on_language_changed(_lang: String) -> void:
+	_refresh_all()
 
 
 func _process(delta: float) -> void:
@@ -117,15 +128,15 @@ func _build_3d_showroom() -> void:
 	floor_mesh.position = Vector3(0.0, -0.02, 0.0)
 	add_child(floor_mesh)
 
-	# Rotating Pedestal Turntable positioned cleanly in upper-right showcase window
+	# Rotating Pedestal Turntable positioned cleanly inside the upper-right open frame
 	_turntable = Node3D.new()
-	_turntable.position = Vector3(1.05, 0.28, 0.0)
+	_turntable.position = Vector3(1.64, 0.38, 0.0)
 	add_child(_turntable)
 
 	var disc := MeshInstance3D.new()
 	var dc := CylinderMesh.new()
-	dc.top_radius = 3.12
-	dc.bottom_radius = 3.28
+	dc.top_radius = 2.58
+	dc.bottom_radius = 2.66
 	dc.height = 0.22
 	dc.radial_segments = 48
 	var dmat := StandardMaterial3D.new()
@@ -140,8 +151,8 @@ func _build_3d_showroom() -> void:
 	# Sleek Glowing Outer Rim Ring tucked just below pedestal top surface
 	var ring := MeshInstance3D.new()
 	var rc := CylinderMesh.new()
-	rc.top_radius = 3.30
-	rc.bottom_radius = 3.36
+	rc.top_radius = 2.68
+	rc.bottom_radius = 2.71
 	rc.height = 0.09
 	rc.radial_segments = 48
 	_turntable_ring_mat = StandardMaterial3D.new()
@@ -158,12 +169,12 @@ func _build_3d_showroom() -> void:
 	_car_mount.position = Vector3(0.0, 0.22, 0.0)
 	_turntable.add_child(_car_mount)
 
-	# Hero Showroom Camera framing the entire car cleanly above the garage panel
+	# Hero Showroom Camera framing the full pedestal ring & car cleanly inside upper-right open frame
 	_camera = Camera3D.new()
 	_camera.fov = 40.0
-	_camera.position = Vector3(-2.45, 2.45, 7.25)
+	_camera.position = Vector3(-2.35, 2.55, 7.80)
 	add_child(_camera)
-	_camera.look_at(Vector3(-0.35, 0.45, 0.0), Vector3.UP)
+	_camera.look_at(Vector3(-0.20, 0.50, 0.0), Vector3.UP)
 	_camera.current = true
 
 
@@ -558,6 +569,7 @@ func _build_settings_modal(parent: Control) -> Control:
 	_add_toggle_row(vb, "set_auto_trans", "auto_transmission")
 	_add_toggle_row(vb, "set_stability", "stability_assist")
 	_add_toggle_row(vb, "set_controls_hud", "show_controls")
+	_add_language_row(vb)
 
 	var close_btn := Button.new()
 	close_btn.name = "CloseBtn"
@@ -568,6 +580,26 @@ func _build_settings_modal(parent: Control) -> Control:
 	)
 	vb.add_child(close_btn)
 	return dim
+
+
+func _add_language_row(parent: Control) -> void:
+	var hb := HBoxContainer.new()
+	hb.name = "Row_language"
+	hb.add_theme_constant_override("separation", 12)
+	parent.add_child(hb)
+	var lbl := Label.new()
+	lbl.name = "Lbl"
+	lbl.set_meta("i18n", "set_language")
+	lbl.custom_minimum_size = Vector2(180, 0)
+	hb.add_child(lbl)
+	var btn := Button.new()
+	btn.name = "LangBtn"
+	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.pressed.connect(func():
+		AudioManager.play_sfx("ui_click")
+		GameState.toggle_language()
+	)
+	hb.add_child(btn)
 
 
 func _add_volume_row(parent: Control, i18n_key: String, setting_key: String) -> void:
@@ -749,6 +781,9 @@ func _refresh_all() -> void:
 			elif child.has_node("Lbl"):
 				var l := child.get_node("Lbl")
 				l.text = GameState.t(str(l.get_meta("i18n")))
+			if child.has_node("LangBtn"):
+				var lb: Button = child.get_node("LangBtn")
+				lb.text = "简体中文  /  EN" if GameState.settings.get("language", "zh") == "zh" else "English  /  中文"
 
 	var cbox := _controls_modal.find_child("CtrlBox", true, false)
 	if cbox:

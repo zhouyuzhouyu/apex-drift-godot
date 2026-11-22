@@ -15,6 +15,7 @@ func _ready() -> void:
 
 
 func _run_all() -> void:
+	GameState.enable_test_mode()
 	var capture_visuals := DisplayServer.get_name() != "headless"
 	print("=== APEX DRIFT VERIFICATION START (display=%s) ===" % DisplayServer.get_name())
 	if capture_visuals:
