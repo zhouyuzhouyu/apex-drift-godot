@@ -1,0 +1,18 @@
+# Godot 4+ specific ignores
+.godot/
+*.translation
+
+# Godot-specific ignores
+export_presets.cfg
+*.export
+
+# Imported files cache and temp screenshots
+/tmp/
+test_screenshots/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/

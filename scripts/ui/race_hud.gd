@@ -1,0 +1,464 @@
+class_name RaceHUD
+extends CanvasLayer
+
+## Complete Live Motorsport HUD with custom vector Tachometer/Speedometer,
+## Live Circuit Minimap, F1 Starting Lights, Drift Combo, Wrong-Way Alert, and Banners.
+
+var player_car: RaceCar
+var all_cars: Array[RaceCar] = []
+var spline: TrackSpline
+var track_data: Dictionary = {}
+var total_laps: int = 3
+var mode: String = "quick_race"
+
+var _root: Control
+var _pos_value: Label
+var _pos_sub: Label
+var _lap_value: Label
+var _track_label: Label
+var _time_cur: Label
+var _time_best: Label
+var _time_delta: Label
+var _banner_label: Label
+var _banner_timer: float = 0.0
+var _wrong_way_panel: PanelContainer
+var _drift_panel: PanelContainer
+var _drift_label: Label
+var _controls_bar: Label
+var _lights_panel: PanelContainer
+var _light_dots: Array[ColorRect] = []
+var _gauge_canvas: Control
+var _minimap_canvas: Control
+var _speedlines_canvas: Control
+
+var _minimap_pts: PackedVector2Array = PackedVector2Array()
+var _wrong_way: bool = false
+var _elapsed_race_time: float = 0.0
+var _camera_label_text: String = ""
+
+
+func _ready() -> void:
+	layer = 10
+	_build_ui()
+
+
+func setup(p_player: RaceCar, p_all_cars: Array[RaceCar], p_spline: TrackSpline, p_track: Dictionary, p_laps: int, p_mode: String) -> void:
+	player_car = p_player
+	all_cars = p_all_cars
+	spline = p_spline
+	track_data = p_track
+	total_laps = p_laps
+	mode = p_mode
+	_minimap_pts = spline.get_minimap_points()
+	_refresh_labels()
+
+
+func _build_ui() -> void:
+	_root = Control.new()
+	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.theme = UITheme.build_theme()
+	add_child(_root)
+
+	# Fullscreen subtle nitro/high-speed edge vignette overlay
+	_speedlines_canvas = _HUDDrawOverlay.new()
+	_speedlines_canvas.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_speedlines_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_speedlines_canvas.draw_cb = _draw_speed_effect
+	_root.add_child(_speedlines_canvas)
+
+	# --- TOP-LEFT: Position & Lap Card ---
+	var tl_panel := PanelContainer.new()
+	tl_panel.position = Vector2(22, 18)
+	tl_panel.add_theme_stylebox_override("panel", UITheme.make_panel_box(UITheme.BG_DARK, UITheme.BORDER_SUBTLE, 12, 1, 18, 12))
+	_root.add_child(tl_panel)
+
+	var tl_box := HBoxContainer.new()
+	tl_box.add_theme_constant_override("separation", 22)
+	tl_panel.add_child(tl_box)
+
+	var pos_col := VBoxContainer.new()
+	tl_box.add_child(pos_col)
+	_pos_sub = Label.new()
+	_pos_sub.add_theme_font_size_override("font_size", 12)
+	_pos_sub.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
+	pos_col.add_child(_pos_sub)
+	_pos_value = Label.new()
+	_pos_value.add_theme_font_size_override("font_size", 34)
+	_pos_value.add_theme_color_override("font_color", Color.WHITE)
+	pos_col.add_child(_pos_value)
+
+	var sep := VSeparator.new()
+	tl_box.add_child(sep)
+
+	var lap_col := VBoxContainer.new()
+	tl_box.add_child(lap_col)
+	_track_label = Label.new()
+	_track_label.add_theme_font_size_override("font_size", 13)
+	_track_label.add_theme_color_override("font_color", UITheme.TEXT_MUTED)
+	lap_col.add_child(_track_label)
+	_lap_value = Label.new()
+	_lap_value.add_theme_font_size_override("font_size", 28)
+	_lap_value.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+	lap_col.add_child(_lap_value)
+
+	# --- TOP-RIGHT: Timing Card ---
+	var tr_panel := PanelContainer.new()
+	tr_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	tr_panel.offset_left = -265
+	tr_panel.offset_right = -22
+	tr_panel.offset_top = 18
+	tr_panel.offset_bottom = 122
+	tr_panel.add_theme_stylebox_override("panel", UITheme.make_panel_box(UITheme.BG_DARK, UITheme.BORDER_SUBTLE, 12, 1, 16, 10))
+	_root.add_child(tr_panel)
+
+	var tr_box := VBoxContainer.new()
+	tr_box.add_theme_constant_override("separation", 4)
+	tr_panel.add_child(tr_box)
+
+	_time_cur = Label.new()
+	_time_cur.add_theme_font_size_override("font_size", 22)
+	_time_cur.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	tr_box.add_child(_time_cur)
+
+	_time_best = Label.new()
+	_time_best.add_theme_font_size_override("font_size", 15)
+	_time_best.add_theme_color_override("font_color", UITheme.ACCENT_CYAN)
+	_time_best.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	tr_box.add_child(_time_best)
+
+	_time_delta = Label.new()
+	_time_delta.add_theme_font_size_override("font_size", 14)
+	_time_delta.add_theme_color_override("font_color", UITheme.TEXT_MUTED)
+	_time_delta.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	tr_box.add_child(_time_delta)
+
+	# --- TOP-CENTER: F1 Starting Lights Overlay ---
+	_lights_panel = PanelContainer.new()
+	_lights_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_lights_panel.offset_left = -175
+	_lights_panel.offset_right = 175
+	_lights_panel.offset_top = 24
+	_lights_panel.offset_bottom = 86
+	_lights_panel.add_theme_stylebox_override("panel", UITheme.make_panel_box(Color(0.05, 0.06, 0.09, 0.92), UITheme.BORDER_SUBTLE, 14, 2, 18, 12))
+	_root.add_child(_lights_panel)
+
+	var lh := HBoxContainer.new()
+	lh.alignment = BoxContainer.ALIGNMENT_CENTER
+	lh.add_theme_constant_override("separation", 18)
+	_lights_panel.add_child(lh)
+	for i in range(5):
+		var dot := ColorRect.new()
+		dot.custom_minimum_size = Vector2(36, 36)
+		dot.color = Color(0.18, 0.06, 0.06)
+		lh.add_child(dot)
+		_light_dots.append(dot)
+
+	# --- CENTER-UPPER: Event Banner (GO / FINAL LAP / PERFECT START / NEW BEST) ---
+	_banner_label = Label.new()
+	_banner_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_banner_label.offset_left = -320
+	_banner_label.offset_right = 320
+	_banner_label.offset_top = 112
+	_banner_label.offset_bottom = 178
+	_banner_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_banner_label.add_theme_font_size_override("font_size", 42)
+	_banner_label.add_theme_color_override("font_color", Color.WHITE)
+	_banner_label.add_theme_constant_override("outline_size", 6)
+	_banner_label.add_theme_color_override("font_outline_color", Color(0.04, 0.06, 0.12, 0.9))
+	_banner_label.visible = false
+	_root.add_child(_banner_label)
+
+	# --- WRONG WAY Flashing Warning ---
+	_wrong_way_panel = PanelContainer.new()
+	_wrong_way_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_wrong_way_panel.offset_left = -210
+	_wrong_way_panel.offset_right = 210
+	_wrong_way_panel.offset_top = 185
+	_wrong_way_panel.offset_bottom = 236
+	_wrong_way_panel.add_theme_stylebox_override("panel", UITheme.make_panel_box(Color(0.86, 0.10, 0.16, 0.92), Color(1.0, 0.85, 0.25), 10, 2, 16, 8))
+	_wrong_way_panel.visible = false
+	_root.add_child(_wrong_way_panel)
+
+	var ww_lbl := Label.new()
+	ww_lbl.name = "WWLabel"
+	ww_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ww_lbl.add_theme_font_size_override("font_size", 22)
+	ww_lbl.add_theme_color_override("font_color", Color.WHITE)
+	_wrong_way_panel.add_child(ww_lbl)
+
+	# --- DRIFT COMBO Popup ---
+	_drift_panel = PanelContainer.new()
+	_drift_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_drift_panel.offset_left = -135
+	_drift_panel.offset_right = 135
+	_drift_panel.offset_top = -126
+	_drift_panel.offset_bottom = -74
+	_drift_panel.add_theme_stylebox_override("panel", UITheme.make_panel_box(Color(0.08, 0.12, 0.22, 0.88), UITheme.ACCENT_GOLD, 10, 2, 14, 8))
+	_drift_panel.visible = false
+	_root.add_child(_drift_panel)
+
+	_drift_label = Label.new()
+	_drift_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_drift_label.add_theme_font_size_override("font_size", 22)
+	_drift_label.add_theme_color_override("font_color", UITheme.ACCENT_GOLD)
+	_drift_panel.add_child(_drift_label)
+
+	# --- BOTTOM-LEFT: Custom Vector Live Minimap ---
+	_minimap_canvas = _HUDDrawOverlay.new()
+	_minimap_canvas.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_minimap_canvas.offset_left = 22
+	_minimap_canvas.offset_right = 202
+	_minimap_canvas.offset_top = -206
+	_minimap_canvas.offset_bottom = -26
+	_minimap_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_minimap_canvas.draw_cb = _draw_minimap
+	_root.add_child(_minimap_canvas)
+
+	# --- BOTTOM-RIGHT: Custom Vector Speedometer, Tachometer & Nitro Cluster ---
+	_gauge_canvas = _HUDDrawOverlay.new()
+	_gauge_canvas.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_gauge_canvas.offset_left = -295
+	_gauge_canvas.offset_right = -20
+	_gauge_canvas.offset_top = -245
+	_gauge_canvas.offset_bottom = -22
+	_gauge_canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_gauge_canvas.draw_cb = _draw_tachometer
+	_root.add_child(_gauge_canvas)
+
+	# --- BOTTOM-CENTER: Compact Controls Bar ---
+	_controls_bar = Label.new()
+	_controls_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_controls_bar.offset_top = -30
+	_controls_bar.offset_bottom = -8
+	_controls_bar.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_controls_bar.add_theme_font_size_override("font_size", 13)
+	_controls_bar.add_theme_color_override("font_color", Color(0.84, 0.88, 0.95, 0.85))
+	_controls_bar.add_theme_constant_override("outline_size", 3)
+	_controls_bar.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	_root.add_child(_controls_bar)
+
+
+func _refresh_labels() -> void:
+	_pos_sub.text = GameState.t("hud_pos")
+	if not track_data.is_empty():
+		_track_label.text = GameState.get_localized_field(track_data, "name")
+	_wrong_way_panel.get_node("WWLabel").text = GameState.t("hud_wrong_way")
+	_controls_bar.text = GameState.t("hud_controls_bar")
+	_controls_bar.visible = bool(GameState.settings.get("show_controls", true))
+
+
+func set_countdown_lights(lit_count: int, is_green: bool, show_panel: bool) -> void:
+	_lights_panel.visible = show_panel
+	for i in range(_light_dots.size()):
+		if is_green:
+			_light_dots[i].color = Color(0.12, 0.96, 0.36)
+		elif i < lit_count:
+			_light_dots[i].color = Color(1.0, 0.16, 0.16)
+		else:
+			_light_dots[i].color = Color(0.18, 0.06, 0.06)
+
+
+func show_banner(text: String, col: Color = Color.WHITE, duration: float = 2.0) -> void:
+	_banner_label.text = text
+	_banner_label.add_theme_color_override("font_color", col)
+	_banner_label.visible = true
+	_banner_timer = duration
+
+
+func set_wrong_way(val: bool) -> void:
+	_wrong_way = val
+
+
+func set_camera_name(cam_mode: int) -> void:
+	_camera_label_text = GameState.t("hud_cam_%d" % cam_mode)
+	show_banner(_camera_label_text, UITheme.ACCENT_CYAN, 1.1)
+
+
+func update_hud(delta: float, race_time: float) -> void:
+	_elapsed_race_time = race_time
+	if player_car == null:
+		return
+
+	if _banner_timer > 0.0:
+		_banner_timer -= delta
+		if _banner_timer <= 0.0:
+			_banner_label.visible = false
+
+	# Flashing Wrong-Way indicator
+	if _wrong_way:
+		_wrong_way_panel.visible = fmod(Time.get_ticks_msec() * 0.004, 1.0) < 0.72
+	else:
+		_wrong_way_panel.visible = false
+
+	# Position & Lap display
+	if mode == "time_trial" or mode == "free_roam":
+		_pos_value.text = "SOLO"
+	else:
+		_pos_value.text = "%d / %d" % [player_car.race_rank, maxi(1, all_cars.size())]
+
+	if mode == "free_roam":
+		_lap_value.text = "%s %d" % [GameState.t("hud_lap"), player_car.current_lap]
+	else:
+		_lap_value.text = "%s %d / %d" % [GameState.t("hud_lap"), mini(player_car.current_lap, total_laps), total_laps]
+
+	# Timers
+	_time_cur.text = "%s  %s" % [GameState.t("hud_time"), GameState.format_time(player_car.current_lap_time)]
+	var saved_best := float(GameState.get_track_record(str(track_data.get("id", ""))).get("best_lap", 0.0))
+	var display_best := player_car.best_lap_time
+	if display_best <= 0.0 or (saved_best > 0.0 and saved_best < display_best):
+		display_best = saved_best
+	_time_best.text = "%s  %s" % [GameState.t("hud_best"), GameState.format_time(display_best)]
+	_time_delta.text = "%s  %s" % [GameState.t("hud_total"), GameState.format_time(race_time)]
+
+	# Drift Combo Popup
+	if player_car.current_drift_score >= 15.0:
+		_drift_panel.visible = true
+		_drift_label.text = "%s  +%d" % [GameState.t("hud_drift"), int(round(player_car.current_drift_score))]
+	else:
+		_drift_panel.visible = false
+
+	_controls_bar.visible = bool(GameState.settings.get("show_controls", true))
+
+	# Trigger custom canvas redraws
+	_gauge_canvas.queue_redraw()
+	_minimap_canvas.queue_redraw()
+	_speedlines_canvas.queue_redraw()
+
+
+func _draw_minimap(ctrl: Control) -> void:
+	var sz := ctrl.size
+	var rect := Rect2(Vector2.ZERO, sz)
+	ctrl.draw_rect(rect, Color(0.04, 0.06, 0.10, 0.78), true)
+	ctrl.draw_rect(rect, UITheme.BORDER_SUBTLE, false, 1.5)
+
+	if _minimap_pts.size() < 3 or spline == null:
+		return
+
+	var pad := 16.0
+	var inner := sz - Vector2(pad * 2.0, pad * 2.0)
+	var screen_pts := PackedVector2Array()
+	screen_pts.resize(_minimap_pts.size() + 1)
+	for i in range(_minimap_pts.size()):
+		screen_pts[i] = Vector2(pad, pad) + _minimap_pts[i] * inner
+	screen_pts[_minimap_pts.size()] = screen_pts[0]
+
+	# Circuit shadow + crisp track outline
+	ctrl.draw_polyline(screen_pts, Color(0.0, 0.0, 0.0, 0.65), 7.5, true)
+	ctrl.draw_polyline(screen_pts, Color(0.76, 0.82, 0.92, 0.88), 3.6, true)
+
+	# Start/Finish white dot
+	ctrl.draw_circle(screen_pts[0], 4.5, UITheme.ACCENT_GOLD)
+
+	# Rival dots
+	for car in all_cars:
+		if not is_instance_valid(car) or car == player_car:
+			continue
+		var mp := Vector2(pad, pad) + spline.world_to_minimap(car.global_position) * inner
+		ctrl.draw_circle(mp, 4.2, Color(1.0, 0.36, 0.42))
+
+	# Player arrow / highlighted dot
+	if player_car != null and is_instance_valid(player_car):
+		var pp := Vector2(pad, pad) + spline.world_to_minimap(player_car.global_position) * inner
+		ctrl.draw_circle(pp, 7.0, Color(0.0, 0.88, 1.0, 0.35))
+		ctrl.draw_circle(pp, 4.8, UITheme.ACCENT_CYAN)
+		ctrl.draw_circle(pp, 2.0, Color.WHITE)
+
+
+func _draw_tachometer(ctrl: Control) -> void:
+	if player_car == null:
+		return
+	var font := UITheme.get_font()
+	var sz := ctrl.size
+	var center := Vector2(sz.x * 0.56, sz.y * 0.50)
+	var radius := 84.0
+
+	# Backing dial
+	ctrl.draw_circle(center, radius + 12.0, Color(0.04, 0.06, 0.11, 0.84))
+	ctrl.draw_arc(center, radius + 12.0, 0.0, TAU, 48, UITheme.BORDER_SUBTLE, 1.6, true)
+
+	# RPM Arc (from 135° to 405° -> 270° sweep)
+	var start_ang := deg_to_rad(135.0)
+	var sweep := deg_to_rad(250.0)
+	var rpm_ratio := clampf(player_car.motor_rpm / maxf(player_car.max_rpm, 1000.0), 0.0, 1.08)
+
+	# Track background arc
+	ctrl.draw_arc(center, radius, start_ang, start_ang + sweep, 40, Color(0.16, 0.20, 0.30, 0.9), 11.0, true)
+	# Redline zone marker (82%..100%)
+	ctrl.draw_arc(center, radius, start_ang + sweep * 0.82, start_ang + sweep, 14, Color(0.65, 0.10, 0.16, 0.7), 11.0, true)
+
+	# Active RPM arc
+	var fill_ang := start_ang + sweep * clampf(rpm_ratio, 0.0, 1.0)
+	var rpm_col := UITheme.ACCENT_CYAN
+	if rpm_ratio > 0.84:
+		rpm_col = UITheme.ACCENT_RED
+	elif rpm_ratio > 0.65:
+		rpm_col = UITheme.ACCENT_GOLD
+	if fill_ang > start_ang + 0.02:
+		ctrl.draw_arc(center, radius, start_ang, fill_ang, 36, rpm_col, 11.0, true)
+
+	# Tick marks
+	for i in range(9):
+		var a := start_ang + sweep * (float(i) / 8.0)
+		var p0 := center + Vector2(cos(a), sin(a)) * (radius - 10.0)
+		var p1 := center + Vector2(cos(a), sin(a)) * (radius + 5.0)
+		var tc := UITheme.ACCENT_RED if i >= 7 else Color(0.75, 0.82, 0.92, 0.8)
+		ctrl.draw_line(p0, p1, tc, 2.0, true)
+
+	# Speed KM/H numeric readout
+	var spd_str := "%d" % int(round(player_car.get_speed_kmh()))
+	ctrl.draw_string(font, center + Vector2(-56.0, 10.0), spd_str, HORIZONTAL_ALIGNMENT_CENTER, 112.0, 42, Color.WHITE)
+	ctrl.draw_string(font, center + Vector2(-42.0, 29.0), "KM/H", HORIZONTAL_ALIGNMENT_CENTER, 84.0, 13, UITheme.TEXT_MUTED)
+
+	# Gear Badge
+	var gear_str := "N"
+	if player_car.current_gear == -1:
+		gear_str = "R"
+	elif player_car.current_gear > 0:
+		gear_str = str(player_car.current_gear)
+
+	var gear_box := Rect2(center + Vector2(-22.0, 38.0), Vector2(44.0, 32.0))
+	ctrl.draw_rect(gear_box, Color(0.11, 0.15, 0.24, 0.96), true)
+	ctrl.draw_rect(gear_box, UITheme.ACCENT_RED if rpm_ratio > 0.88 else UITheme.ACCENT_CYAN, false, 2.0)
+	ctrl.draw_string(font, gear_box.position + Vector2(0.0, 24.0), gear_str, HORIZONTAL_ALIGNMENT_CENTER, 44.0, 22, Color.WHITE)
+
+	# Auto/Manual mini pill
+	var trans_txt := GameState.t("hud_auto") if player_car.automatic_transmission else GameState.t("hud_manual")
+	ctrl.draw_string(font, center + Vector2(30.0, 62.0), trans_txt, HORIZONTAL_ALIGNMENT_LEFT, 70.0, 12, UITheme.TEXT_MUTED)
+
+	# Nitro Bar along bottom of cluster
+	var nb_rect := Rect2(Vector2(18.0, sz.y - 26.0), Vector2(sz.x - 28.0, 18.0))
+	ctrl.draw_rect(nb_rect, Color(0.06, 0.08, 0.14, 0.92), true)
+	var fill_w := (nb_rect.size.x - 4.0) * clampf(player_car.nitro / 100.0, 0.0, 1.0)
+	var nitro_col := Color(0.25, 0.96, 1.0) if player_car.nitro_active else Color(0.05, 0.68, 0.98)
+	if fill_w > 1.0:
+		ctrl.draw_rect(Rect2(nb_rect.position + Vector2(2.0, 2.0), Vector2(fill_w, nb_rect.size.y - 4.0)), nitro_col, true)
+	ctrl.draw_rect(nb_rect, nitro_col if player_car.nitro_active else UITheme.BORDER_SUBTLE, false, 1.5)
+	ctrl.draw_string(font, nb_rect.position + Vector2(8.0, 14.0), "%s  %d%%" % [GameState.t("hud_nitro"), int(round(player_car.nitro))], HORIZONTAL_ALIGNMENT_LEFT, 120.0, 12, Color.WHITE)
+
+
+func _draw_speed_effect(ctrl: Control) -> void:
+	if player_car == null:
+		return
+	var boosting := player_car.nitro_active or player_car.boost_pad_timer > 0.0 or player_car.launch_boost_timer > 0.0
+	var spd := player_car.get_speed_kmh()
+	if not boosting and spd < 195.0:
+		return
+	var intensity := 0.55 if boosting else clampf((spd - 195.0) / 110.0, 0.0, 0.35)
+	var sz := ctrl.size
+	var center := sz * 0.5
+	var col := Color(0.0, 0.90, 1.0, intensity * 0.42) if boosting else Color(1.0, 1.0, 1.0, intensity * 0.22)
+	var phase := float(Time.get_ticks_msec() % 1000) * 0.015
+	for i in range(18):
+		var ang := float(i) * TAU / 18.0 + sin(phase + float(i)) * 0.04
+		var dir := Vector2(cos(ang), sin(ang))
+		var r_outer := maxf(sz.x, sz.y) * 0.62
+		var r_inner := r_outer * (0.72 if boosting else 0.82)
+		ctrl.draw_line(center + dir * r_inner, center + dir * r_outer, col, 2.4 if boosting else 1.5, true)
+
+
+class _HUDDrawOverlay extends Control:
+	var draw_cb: Callable
+	func _draw() -> void:
+		if draw_cb.is_valid():
+			draw_cb.call(self)

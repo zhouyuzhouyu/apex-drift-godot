@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff2e55"/>
+      <stop offset="100%" stop-color="#00e5ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="24" fill="url(#bg)" stroke="url(#accent)" stroke-width="4"/>
+  <path d="M22 86 L46 36 L68 36 L58 58 L76 58 L64 86 L48 86 L54 71 L41 71 L34 86 Z" fill="#ff2e55"/>
+  <path d="M72 36 L106 36 L98 54 L84 54 L79 64 L96 64 L88 86 L68 86 Z" fill="#00e5ff"/>
+  <rect x="22" y="95" width="14" height="10" fill="#f8fafc"/>
+  <rect x="36" y="95" width="14" height="10" fill="#334155"/>
+  <rect x="50" y="95" width="14" height="10" fill="#f8fafc"/>
+  <rect x="64" y="95" width="14" height="10" fill="#334155"/>
+  <rect x="78" y="95" width="14" height="10" fill="#f8fafc"/>
+  <rect x="92" y="95" width="14" height="10" fill="#334155"/>
+</svg>
