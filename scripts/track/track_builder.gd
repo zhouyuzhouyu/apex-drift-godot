@@ -101,6 +101,7 @@ static func build_track(parent: Node3D, track_data: Dictionary) -> Dictionary:
 		"boost_areas": boost_res["areas"],
 		"boost_distances": boost_res["distances"],
 		"checkpoints": checkpoints,
+		"barrier_offset": barrier_offset,
 		"is_night": bool(theme["is_night"])
 	}
 
@@ -276,12 +277,21 @@ static func _build_guardrail_wall(
 ) -> void:
 	var n := spline.sample_count()
 	var vis_h := 1.15
-	var col_h := 4.0
+	var col_h := 9.0
+	var thickness := 3.2
 	var vis_st := SurfaceTool.new()
 	vis_st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var col_st := SurfaceTool.new()
-	col_st.begin(Mesh.PRIMITIVE_TRIANGLES)
 
+	var body := StaticBody3D.new()
+	body.name = node_name + "_Body"
+	body.collision_layer = 2 # TrackBarriers layer (wheel raycasts ignore layer 2!)
+	body.collision_mask = 0
+	var pmat := PhysicsMaterial.new()
+	pmat.friction = 0.03 # Ultra-low friction so cars glide smoothly along guardrails!
+	pmat.bounce = 0.06
+	body.physics_material_override = pmat
+
+	var out_sign := -1.0 if is_left else 1.0
 	var v_accum := 0.0
 	for i in range(n):
 		var nxt := (i + 1) % n
@@ -295,32 +305,40 @@ static func _build_guardrail_wall(
 		var t0 := b0 + spline.ups[i] * vis_h
 		var t1 := b1 + spline.ups[nxt] * vis_h
 
-		# Extend collision wall 0.5m below road edge and 4.0m high, plus a 0.55m backup inward wall
-		var cb0 := spline.points[i] + spline.rights[i] * lat_offset - spline.ups[i] * 0.50
-		var cb1 := spline.points[nxt] + spline.rights[nxt] * lat_offset - spline.ups[nxt] * 0.50
-		var ct0 := cb0 + spline.ups[i] * (col_h + 0.50)
-		var ct1 := cb1 + spline.ups[nxt] * (col_h + 0.50)
-
-		var out_shift := -0.55 if is_left else 0.55
-		var bb0 := cb0 + spline.rights[i] * out_shift
-		var bb1 := cb1 + spline.rights[nxt] * out_shift
-		var bt0 := ct0 + spline.rights[i] * out_shift
-		var bt1 := ct1 + spline.rights[nxt] * out_shift
-
 		var inward_n0 := spline.rights[i] if is_left else -spline.rights[i]
 		var inward_n1 := spline.rights[nxt] if is_left else -spline.rights[nxt]
 
-		# Double-sided visual guardrail + strictly inward-facing double-layer collision wall (prevents high-speed tunneling!)
+		# Double-sided visual guardrail ribbon
 		if is_left:
 			_add_quad(vis_st, b0, t0, t1, b1, inward_n0, inward_n1, u0, u1)
 			_add_quad(vis_st, b1, t1, t0, b0, -inward_n1, -inward_n0, u1, u0)
-			_add_quad(col_st, cb0, ct0, ct1, cb1, inward_n0, inward_n1, u0, u1)
-			_add_quad(col_st, bb0, bt0, bt1, bb1, inward_n0, inward_n1, u0, u1)
 		else:
 			_add_quad(vis_st, b1, t1, t0, b0, inward_n1, inward_n0, u1, u0)
 			_add_quad(vis_st, b0, t0, t1, b1, -inward_n0, -inward_n1, u0, u1)
-			_add_quad(col_st, cb1, ct1, ct0, cb0, inward_n1, inward_n0, u1, u0)
-			_add_quad(col_st, bb1, bt1, bt0, bb0, inward_n1, inward_n0, u1, u0)
+
+		# Solid volumetric 3.2m-thick x 9.0m-tall BoxShape3D segment flush with visual guardrail inner face!
+		var p0 := spline.points[i] + spline.rights[i] * lat_offset
+		var p1 := spline.points[nxt] + spline.rights[nxt] * lat_offset
+		var seg_vec := p1 - p0
+		var slen := seg_vec.length()
+		if slen > 0.05:
+			var fwd := seg_vec / slen
+			var up_avg := (spline.ups[i] + spline.ups[nxt]).normalized()
+			var z_ax := -fwd
+			var x_ax := up_avg.cross(z_ax)
+			if x_ax.length_squared() < 0.0001:
+				x_ax = Vector3.RIGHT
+			else:
+				x_ax = x_ax.normalized()
+			var y_ax := z_ax.cross(x_ax).normalized()
+			var box_center := (p0 + p1) * 0.5 + x_ax * (out_sign * thickness * 0.5) + y_ax * (col_h * 0.5 - 2.0)
+
+			var box := BoxShape3D.new()
+			box.size = Vector3(thickness, col_h, slen + 0.65)
+			var shape := CollisionShape3D.new()
+			shape.shape = box
+			shape.transform = Transform3D(Basis(x_ax, y_ax, z_ax), box_center)
+			body.add_child(shape)
 
 	var vis_mesh := vis_st.commit()
 	var mi := MeshInstance3D.new()
@@ -328,19 +346,6 @@ static func _build_guardrail_wall(
 	mi.mesh = vis_mesh
 	mi.material_override = mat
 	root.add_child(mi)
-
-	var col_mesh := col_st.commit()
-	var body := StaticBody3D.new()
-	body.name = node_name + "_Body"
-	body.collision_layer = 2 # TrackBarriers layer (wheel raycasts ignore layer 2!)
-	body.collision_mask = 0
-	var pmat := PhysicsMaterial.new()
-	pmat.friction = 0.04 # Ultra-low friction so cars glide cleanly along guardrails!
-	pmat.bounce = 0.14
-	body.physics_material_override = pmat
-	var shape := CollisionShape3D.new()
-	shape.shape = col_mesh.create_trimesh_shape()
-	body.add_child(shape)
 	root.add_child(body)
 
 

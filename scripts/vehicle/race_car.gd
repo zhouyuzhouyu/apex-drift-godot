@@ -80,6 +80,8 @@ var finish_time: float = 0.0
 var current_lap_time: float = 0.0
 var best_lap_time: float = 0.0
 var race_rank: int = 1
+var track_spline: TrackSpline = null
+var barrier_corridor_half_width: float = 0.0
 
 # Visual handles
 var _visual_root: Node3D
@@ -865,6 +867,9 @@ func _physics_process(delta: float) -> void:
 					total_drift_score += int(round(current_drift_score))
 					current_drift_score = 0.0
 
+	# In-physics guardrail corridor wall-glide containment (prevents high-speed wall tunneling!)
+	_enforce_track_corridor()
+
 	# Per-car top speed cap (+35 km/h on Nitro/Pad, up to +46 km/h on LV.3 Drift Exit Boost!)
 	var cap_bonus := 0.0
 	if nitro_active or boost_pad_timer > 0.0:
@@ -876,6 +881,51 @@ func _physics_process(delta: float) -> void:
 		linear_velocity = linear_velocity.normalized() * max_v
 
 	_update_visual_fx(delta)
+
+
+func set_track_bounds(p_spline: TrackSpline, p_barrier_offset: float) -> void:
+	track_spline = p_spline
+	barrier_corridor_half_width = maxf(0.0, p_barrier_offset - 1.05)
+
+
+func _enforce_track_corridor() -> void:
+	if track_spline == null or barrier_corridor_half_width <= 2.0:
+		return
+	var prog := track_spline.get_progress(global_position, spline_index)
+	var road_pt: Vector3 = prog["closest_point"]
+	# Ignore if running on an elevated test skidpad far above the track
+	if absf(global_position.y - road_pt.y) > 8.0:
+		return
+	spline_index = int(prog["index"])
+	var lat: float = float(prog["lateral"])
+	var max_lat: float = barrier_corridor_half_width
+	if absf(lat) < max_lat:
+		return
+
+	var side := signf(lat)
+	var track_right: Vector3 = prog["right"]
+	var outward := track_right * side
+	var out_vel := linear_velocity.dot(outward)
+	if out_vel > 0.0:
+		linear_velocity -= outward * (out_vel * 1.12)
+		if linear_velocity.y > 1.8:
+			linear_velocity.y = 1.8
+
+	if arcade_drift_active:
+		var td_out := _drift_travel_dir.dot(outward)
+		if td_out > 0.0:
+			var road_up := _get_road_up()
+			var glided := (_drift_travel_dir - outward * (td_out + 0.06)).slide(road_up)
+			if glided.length_squared() > 0.001:
+				_drift_travel_dir = glided.normalized()
+		_drift_speed = minf(_drift_speed, maxf(linear_velocity.length(), _drift_speed * 0.94))
+
+	# Hard-clamp residual lateral penetration so car can never squeeze past the guardrail
+	var excess := absf(lat) - (max_lat + 0.25)
+	if excess > 0.0 and excess < 4.5:
+		global_position -= outward * excess
+		angular_velocity.x *= 0.45
+		angular_velocity.z *= 0.45
 
 
 func _update_visual_fx(delta: float) -> void:

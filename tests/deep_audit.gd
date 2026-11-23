@@ -394,6 +394,40 @@ func _run_headless_full_lap_audit() -> Array[String]:
 			if not lang_updated:
 				failures.append("Mid-race HUD language switch did not update RaceHUD")
 
+			# (4) High-Speed Guardrail Containment (240 km/h wall slam) + Out-of-Bounds / Void Auto-Rescue
+			var wall_xf := rm.spline.get_transform_at_distance(120.0, 0.0, 0.10)
+			# Point car 45 deg directly into the right guardrail at 240 km/h!
+			var slam_xf := wall_xf.rotated_local(Vector3.UP, -PI * 0.25)
+			rm.player_car.reset_to_transform(slam_xf)
+			rm.player_car.linear_velocity = -slam_xf.basis.z * 66.7 # 240 km/h
+			rm.player_car.throttle_input = 1.0
+			rm.player_car.steering_input = -0.8
+			var wall_escaped := false
+			var max_slam_lat := 0.0
+			for _ws in range(48):
+				await get_tree().physics_frame
+				var wp := rm.spline.get_progress(rm.player_car.global_position, rm.player_car.spline_index)
+				var wlat := absf(float(wp["lateral"]))
+				max_slam_lat = maxf(max_slam_lat, wlat)
+				var wroad_pt: Vector3 = wp["closest_point"]
+				if rm.player_car.global_position.y < wroad_pt.y - 2.0 or wlat > rm.barrier_offset + 1.5:
+					wall_escaped = true
+			# Now force-teleport car into void (y = -20) to verify instant automatic rescue!
+			var void_xf := rm.spline.get_transform_at_distance(160.0, rm.barrier_offset + 8.0, -20.0)
+			rm.player_car.reset_to_transform(void_xf)
+			rm.player_car.linear_velocity = Vector3(0.0, -35.0, 0.0)
+			await _wait_phys(3)
+			var rescue_prog := rm.spline.get_progress(rm.player_car.global_position, rm.player_car.spline_index)
+			var rescue_road_pt: Vector3 = rescue_prog["closest_point"]
+			var void_rescued := absf(float(rescue_prog["lateral"])) < 1.2 and rm.player_car.global_position.y >= rescue_road_pt.y - 0.5
+			print("   Guardrail 240km/h slam: max_lat=%.2fm (limit=%.2fm) escaped=%s | Void auto-rescue=%s" % [
+				max_slam_lat, rm.barrier_offset, str(wall_escaped), str(void_rescued)
+			])
+			if wall_escaped:
+				failures.append("Car escaped guardrail during 240 km/h wall slam (max_lat=%.2fm, limit=%.2fm)" % [max_slam_lat, rm.barrier_offset])
+			if not void_rescued:
+				failures.append("Void / out-of-bounds auto-rescue failed (pos=%s, road_y=%.2f)" % [str(rm.player_car.global_position), rescue_road_pt.y])
+
 		rm.queue_free()
 		await _wait_phys(4)
 

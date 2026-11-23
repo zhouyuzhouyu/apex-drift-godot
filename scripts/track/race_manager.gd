@@ -9,6 +9,7 @@ const RACE_CAR_SCENE := preload("res://scenes/vehicle/race_car.tscn")
 
 var track_data: Dictionary = {}
 var spline: TrackSpline
+var barrier_offset: float = 13.0
 var start_light_mats: Array[StandardMaterial3D] = []
 var boost_distances: PackedFloat32Array = PackedFloat32Array()
 var is_night: bool = false
@@ -32,6 +33,7 @@ var mode: String = "quick_race"
 
 var _car_has_crossed_start: Dictionary = {} # RaceCar -> bool
 var _car_prev_progress: Dictionary = {}     # RaceCar -> float
+var _car_flipped_timers: Dictionary = {}    # RaceCar -> float
 var _ghost_lap_frames: Array = []
 var _ghost_sample_accum: float = 0.0
 var _ghost_lap_start_time: float = 0.0
@@ -49,6 +51,7 @@ func _ready() -> void:
 	# 1. Build 3D Track World
 	var built := TrackBuilder.build_track(self, track_data)
 	spline = built["spline"]
+	barrier_offset = float(built.get("barrier_offset", 13.0))
 	start_light_mats = built["start_lights"]
 	boost_distances = built["boost_distances"]
 	is_night = bool(built["is_night"])
@@ -173,6 +176,7 @@ func _instantiate_car(car_idx: int, livery_idx: int, drv_name: String, is_p: boo
 	car.name = "Car_" + drv_name
 	add_child(car)
 	car.configure(car_idx, livery_idx, drv_name, is_p, is_night)
+	car.set_track_bounds(spline, barrier_offset)
 	var xf := spline.get_grid_transform(grid_slot)
 	car.reset_to_transform(xf)
 	car.controls_locked = true
@@ -182,6 +186,7 @@ func _instantiate_car(car_idx: int, livery_idx: int, drv_name: String, is_p: boo
 	car.total_race_progress = car.spline_progress - 1.0 # Behind start line initially
 	_car_has_crossed_start[car] = false
 	_car_prev_progress[car] = car.spline_progress
+	_car_flipped_timers[car] = 0.0
 	return car
 
 
@@ -275,6 +280,22 @@ func _update_race_progress(delta: float) -> void:
 			car.current_lap_time += delta
 
 		var prog := spline.get_progress(car.global_position, car.spline_index)
+
+		# Bulletproof automatic out-of-bounds / void-fall / flipped-car recovery for both Player & AI!
+		if race_state == "racing" and not car.controls_locked and not car.finished:
+			var road_pt: Vector3 = prog["closest_point"]
+			var lat_now := absf(float(prog["lateral"]))
+			var fell_void := (car.global_position.y < road_pt.y - 4.0) or (car.global_position.y < -8.0)
+			var outside_corridor := (lat_now > barrier_offset + 2.5) and (absf(car.global_position.y - road_pt.y) < 12.0)
+			if car.global_transform.basis.y.y < 0.25:
+				_car_flipped_timers[car] = float(_car_flipped_timers.get(car, 0.0)) + delta
+			else:
+				_car_flipped_timers[car] = 0.0
+			var stuck_flipped := float(_car_flipped_timers.get(car, 0.0)) >= 1.2
+			if fell_void or outside_corridor or stuck_flipped:
+				_respawn_car(car, true)
+				prog = spline.get_progress(car.global_position, car.spline_index)
+
 		var p_val := float(prog["progress"])
 		var prev_p := float(_car_prev_progress.get(car, p_val))
 		car.spline_index = int(prog["index"])
@@ -498,13 +519,32 @@ func _on_player_drift_boost(tier: int) -> void:
 	hud.show_banner(GameState.t("hud_drift_boost_%d" % clamped), col, 1.35)
 
 
+func _respawn_car(car: RaceCar, is_auto: bool = false) -> void:
+	if car == null or not is_instance_valid(car) or spline == null:
+		return
+	var safe_idx := clampi(car.spline_index, 0, maxi(0, spline.sample_count() - 1))
+	var dist := spline.cum_lengths[safe_idx]
+	var xf := spline.get_transform_at_distance(dist, 0.0, 0.14)
+	car.reset_to_transform(xf)
+	_car_flipped_timers[car] = 0.0
+	var prog := spline.get_progress(car.global_position, safe_idx)
+	car.spline_index = int(prog["index"])
+	car.spline_progress = float(prog["progress"])
+	_car_prev_progress[car] = car.spline_progress
+	if car == player_car:
+		if chase_camera != null:
+			chase_camera._snap_immediate()
+		if hud != null:
+			hud.set_wrong_way(false)
+			if is_auto:
+				hud.show_banner(GameState.t("hud_auto_reset"), UITheme.ACCENT_GOLD, 1.6)
+		AudioManager.play_sfx("ui_click")
+
+
 func _on_player_respawn() -> void:
 	if player_car == null or race_state != "racing":
 		return
-	var dist := spline.cum_lengths[player_car.spline_index]
-	var xf := spline.get_transform_at_distance(dist, 0.0, 0.14)
-	player_car.reset_to_transform(xf)
-	AudioManager.play_sfx("ui_click")
+	_respawn_car(player_car, false)
 
 
 func _on_camera_switch() -> void:

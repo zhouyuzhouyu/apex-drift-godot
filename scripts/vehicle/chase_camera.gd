@@ -41,7 +41,11 @@ func _on_impact(intensity: float) -> void:
 func _snap_immediate() -> void:
 	if target == null:
 		return
-	var fwd := (-target.global_transform.basis.z).normalized()
+	var fwd := (-target.global_transform.basis.z)
+	fwd.y *= 0.25
+	fwd = fwd.normalized() if fwd.length_squared() > 0.001 else Vector3.FORWARD
+	_smoothed_forward = fwd
+	_shake_amount = 0.0
 	global_position = target.global_position - fwd * 6.4 + Vector3.UP * 2.55
 	look_at(target.global_position + fwd * 8.0 + Vector3.UP * 1.1, Vector3.UP)
 
